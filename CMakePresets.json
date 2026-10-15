@@ -1,0 +1,70 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": { "major": 3, "minor": 25, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "AEROLAB_WARNINGS_AS_ERRORS": "ON"
+      }
+    },
+    {
+      "name": "debug",
+      "displayName": "Debug",
+      "inherits": "base",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
+    },
+    {
+      "name": "release",
+      "displayName": "Release",
+      "inherits": "base",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
+    },
+    {
+      "name": "tests-only",
+      "displayName": "Tests only (no SDL/GL/ImGui)",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "AEROLAB_BUILD_APP": "OFF"
+      }
+    },
+    {
+      "name": "ubsan",
+      "displayName": "Tests with UndefinedBehaviorSanitizer",
+      "inherits": "tests-only",
+      "cacheVariables": { "AEROLAB_SANITIZE": "undefined" }
+    }
+  ],
+  "buildPresets": [
+    { "name": "debug", "configurePreset": "debug" },
+    { "name": "release", "configurePreset": "release" },
+    { "name": "tests-only", "configurePreset": "tests-only" },
+    { "name": "ubsan", "configurePreset": "ubsan" }
+  ],
+  "testPresets": [
+    {
+      "name": "debug",
+      "configurePreset": "debug",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "release",
+      "configurePreset": "release",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "tests-only",
+      "configurePreset": "tests-only",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "ubsan",
+      "configurePreset": "ubsan",
+      "output": { "outputOnFailure": true }
+    }
+  ]
+}

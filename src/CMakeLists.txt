@@ -1,0 +1,43 @@
+# First-party libraries. Each directory is an independent static library; the
+# allowed dependency direction is documented in docs/ARCHITECTURE.md and
+# enforced by the module_dependencies test.
+
+function(aerolab_add_library name)
+  cmake_parse_arguments(ARG "" "" "SOURCES;DEPS" ${ARGN})
+  add_library(${name} STATIC ${ARG_SOURCES})
+  target_include_directories(${name} PUBLIC ${PROJECT_SOURCE_DIR}/src)
+  target_link_libraries(${name} PUBLIC ${ARG_DEPS} PRIVATE aerolab_options)
+endfunction()
+
+aerolab_add_library(aerolab_core
+  SOURCES
+    core/clock.cc
+    core/log.cc)
+
+# Command-line parsing has no platform dependencies, so it is always built
+# and unit tested, even in test-only configurations.
+aerolab_add_library(aerolab_app_options
+  SOURCES
+    app/options.cc)
+
+if(AEROLAB_BUILD_APP)
+  aerolab_add_library(aerolab_render
+    SOURCES
+      render/gl.cc
+      render/readback.cc
+    DEPS aerolab_core)
+
+  add_executable(aerolab
+    app/main.cc
+    app/application.cc
+    app/screenshot.cc
+    app/sdl_window.cc)
+  target_include_directories(aerolab PRIVATE ${PROJECT_SOURCE_DIR}/src)
+  target_link_libraries(aerolab PRIVATE
+    aerolab_app_options
+    aerolab_core
+    aerolab_render
+    SDL3::SDL3
+    aerolab_options)
+  aerolab_configure_executable(aerolab)
+endif()
