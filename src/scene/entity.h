@@ -13,6 +13,7 @@
 #include "math/quat.h"
 #include "math/transform.h"
 #include "math/vec3.h"
+#include "sim/flight_agent.h"
 #include "sim/force_model.h"
 #include "sim/integrator.h"
 #include "sim/kinematic_path.h"
@@ -60,11 +61,12 @@ struct SpinComponent {
 };
 
 enum class MotionType {
-  kDynamic,    // Integrated from forces and torques.
-  kKinematic,  // Follows a closed-form path; no forces.
+  kDynamic,     // Integrated from forces and torques.
+  kKinematic,   // Follows a closed-form path; no forces.
+  kAutonomous,  // Flies itself: game-style AI chooses where and how fast.
 };
 
-// Why a dynamic body was frozen. A frozen body stays put until reset.
+// Why the simulation froze a body. A frozen body stays put until reset.
 enum class BodyHalt {
   kNone,
   kDiverged,     // The integrator produced a non-finite state.
@@ -96,6 +98,12 @@ struct BodyComponent {
   sim::ForceModel forces;
   sim::Integrator integrator = sim::Integrator::kRungeKutta4;
   sim::KinematicPath path;  // Used when motion == kKinematic.
+
+  // Used when motion == kAutonomous: the agent's settings, its decision
+  // state, and the object it is currently steering clear of (if any).
+  sim::AgentParams agent;
+  sim::AgentBrain brain;
+  EntityId avoiding;
 
   double age = 0.0;   // Seconds since launch (or the last reset).
   Vec3 acceleration;  // Most recent linear acceleration, m/s^2.

@@ -42,6 +42,7 @@ LogLevel SimulationEventLevel(SimulationEvent::Kind kind) {
       return LogLevel::kWarning;
     case SimulationEvent::Kind::kBurnout:
     case SimulationEvent::Kind::kImpact:
+    case SimulationEvent::Kind::kDecision:
       return LogLevel::kInfo;
   }
   return LogLevel::kInfo;
@@ -206,9 +207,12 @@ void Application::UpdateSimulation(double frame_dt) {
   frame_stats_.Record(FrameTiming::kSimulation,
                       simulation_.stats().step_milliseconds);
   for (SimulationEvent& event : simulation_.TakeEvents()) {
-    // Mirror to stderr too, but tag the event log entry with sim time.
-    std::fprintf(stderr, "[sim t=%.2fs] %s\n", event.time,
-                 event.message.c_str());
+    // Mirror physics events to stderr too (agent decisions are frequent and
+    // stay in the event log); log entries are tagged with sim time.
+    if (event.kind != SimulationEvent::Kind::kDecision) {
+      std::fprintf(stderr, "[sim t=%.2fs] %s\n", event.time,
+                   event.message.c_str());
+    }
     event_log_.Add(SimulationEventLevel(event.kind), EventSource::kSimulation,
                    std::move(event.message), wall_clock_.ElapsedSeconds(),
                    event.time);

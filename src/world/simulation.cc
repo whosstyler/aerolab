@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <format>
 #include <limits>
 #include <optional>
@@ -14,10 +15,12 @@
 #include "math/intersection.h"
 #include "math/quat.h"
 #include "math/transform.h"
+#include "sim/flight_agent.h"
 #include "sim/force_model.h"
 #include "sim/integrator.h"
 #include "sim/kinematic_path.h"
 #include "world/animation.h"
+#include "world/autonomy.h"
 
 namespace aerolab {
 namespace {
@@ -68,6 +71,7 @@ sim::RigidBodyState KinematicState(const BodyComponent& body, double age,
 }
 
 Vec3 CurrentAcceleration(const BodyComponent& body) {
+  if (body.motion == MotionType::kAutonomous) return body.acceleration;
   if (body.motion == MotionType::kKinematic) {
     return sim::SamplePath(body.path, body.age).acceleration;
   }
@@ -81,10 +85,26 @@ void ResetBody(BodyComponent& body) {
   body.state = body.motion == MotionType::kKinematic
                    ? KinematicState(body, 0.0, body.initial, 0.0)
                    : body.initial;
-  body.previous = body.state;
   body.halt = BodyHalt::kNone;
   body.telemetry.Clear();
-  body.acceleration = CurrentAcceleration(body);
+  if (body.motion == MotionType::kAutonomous) {
+    body.acceleration = Vec3::Zero();
+    body.state.angular_velocity = Vec3::Zero();
+    // Launch inside the flight envelope (a wing cannot start from rest; a
+    // dart switched to autonomous may have been launched far too fast).
+    sim::AgentMotion launch{.position = body.state.position,
+                            .velocity = body.state.velocity,
+                            .acceleration = Vec3::Zero(),
+                            .orientation = body.state.orientation};
+    sim::FitToEnvelope(body.agent, launch);
+    body.state.velocity = launch.velocity;
+    body.state.orientation = launch.orientation;
+    sim::ResetBrain(body.agent, launch, body.brain);
+    body.avoiding = kNoEntity;
+  } else {
+    body.acceleration = CurrentAcceleration(body);
+  }
+  body.previous = body.state;
 }
 
 // Writes body poses into the hierarchy parents-first, so a body attached to
@@ -165,6 +185,19 @@ void SimulationSystem::Step(Scene& scene, double dt) {
   time_ += dt;
   ++step_count_;
 
+  // Agents sense the world as it was at the start of the step, so the
+  // order in which bodies are stepped does not matter.
+  bool has_agents = false;
+  scene.ForEachEntity([&has_agents](EntityId, const Entity& entity) {
+    has_agents = has_agents || (entity.body.has_value() &&
+                                entity.body->motion == MotionType::kAutonomous);
+  });
+  if (has_agents) {
+    CollectObstacles(scene, obstacles_);
+  } else {
+    obstacles_.clear();
+  }
+
   scene.ForEachEntity([this, dt](EntityId id, Entity& entity) {
     if (entity.body.has_value()) StepBody(id, entity.name, *entity.body, dt);
   });
@@ -213,6 +246,10 @@ void SimulationSystem::StepBody(EntityId id, const std::string& name,
     body.age += dt;
     return;
   }
+  if (body.motion == MotionType::kAutonomous) {
+    StepAgentBody(id, name, body, dt);
+    return;
+  }
   const double burn_end = body.forces.thrust_duration;
   body.state = sim::Step(body.state, body.mass, body.forces, body.age, dt,
                          body.integrator);
@@ -245,6 +282,54 @@ void SimulationSystem::StepBody(EntityId id, const std::string& name,
   ApplyGroundContact(id, name, body);
   body.age += dt;
   body.acceleration = CurrentAcceleration(body);
+}
+
+void SimulationSystem::StepAgentBody(EntityId id, const std::string& name,
+                                     BodyComponent& body, double dt) {
+  if (!(dt > 0.0)) return;
+  ObstaclesFor(obstacles_, id, agent_shapes_, agent_ids_);
+  sim::AgentMotion motion{.position = body.state.position,
+                          .velocity = body.state.velocity,
+                          .acceleration = body.acceleration,
+                          .orientation = body.state.orientation};
+  const std::optional<sim::AgentDecision> decision =
+      sim::StepAgent(body.agent, agent_shapes_, dt, body.brain, motion);
+
+  body.state.position = motion.position;
+  body.state.velocity = motion.velocity;
+  body.state.orientation = motion.orientation;
+  body.state.angular_velocity =
+      ToRotationVector(motion.orientation *
+                       Conjugate(body.previous.orientation)) /
+      dt;
+  body.acceleration = motion.acceleration;
+  const int avoided = body.brain.avoidance.obstacle;
+  body.avoiding =
+      avoided >= 0 && static_cast<std::size_t>(avoided) < agent_ids_.size()
+          ? agent_ids_[static_cast<std::size_t>(avoided)]
+          : kNoEntity;
+  body.age += dt;
+
+  const bool finite = IsFiniteState(body.state);
+  if (!finite || IsRunaway(body.state)) {
+    // Defensive (the agent sanitizes its parameters): never let a bad
+    // state spread through rendering and the UI.
+    body.state = body.previous;
+    body.state.velocity = Vec3::Zero();
+    body.state.angular_velocity = Vec3::Zero();
+    body.acceleration = Vec3::Zero();
+    body.halt = finite ? BodyHalt::kOutOfBounds : BodyHalt::kDiverged;
+    PushEvent(
+        finite ? SimulationEvent::Kind::kOutOfBounds
+               : SimulationEvent::Kind::kDivergence,
+        id,
+        std::format("{}: autopilot left the valid range; body stopped", name));
+    return;
+  }
+  if (decision.has_value()) {
+    PushEvent(SimulationEvent::Kind::kDecision, id,
+              DescribeDecision(name, body.agent.style, *decision));
+  }
 }
 
 void SimulationSystem::ApplyGroundContact(EntityId id, const std::string& name,
@@ -353,9 +438,16 @@ std::optional<Aabb> RenderWorldBounds(const Scene& scene, EntityId id,
                        RenderWorldMatrix(scene, id, alpha));
 }
 
+double PotentialEnergy(const BodyComponent& body) {
+  // Agents ignore the force model, so only plain gravity applies to them.
+  if (body.motion == MotionType::kAutonomous) {
+    return body.mass.mass * sim::kStandardGravity * body.state.position.y;
+  }
+  return sim::PotentialEnergy(body.state, body.mass, body.forces);
+}
+
 double MechanicalEnergy(const BodyComponent& body) {
-  return sim::KineticEnergy(body.state, body.mass) +
-         sim::PotentialEnergy(body.state, body.mass, body.forces);
+  return sim::KineticEnergy(body.state, body.mass) + PotentialEnergy(body);
 }
 
 }  // namespace aerolab

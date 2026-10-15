@@ -12,12 +12,14 @@
 #include "math/mat4.h"
 #include "scene/entity.h"
 #include "scene/scene.h"
+#include "sim/flight_agent.h"
+#include "world/autonomy.h"
 
 namespace aerolab {
 
 // Something noteworthy that happened during a simulation step.
 struct SimulationEvent {
-  enum class Kind { kBurnout, kImpact, kDivergence, kOutOfBounds };
+  enum class Kind { kBurnout, kImpact, kDivergence, kOutOfBounds, kDecision };
   Kind kind = Kind::kBurnout;
   double time = 0.0;  // Simulation time, s.
   EntityId entity;
@@ -83,6 +85,8 @@ class SimulationSystem {
   void Step(Scene& scene, double dt);
   void StepBody(EntityId id, const std::string& name, BodyComponent& body,
                 double dt);
+  void StepAgentBody(EntityId id, const std::string& name, BodyComponent& body,
+                     double dt);
   void ApplyGroundContact(EntityId id, const std::string& name,
                           BodyComponent& body);
   void RecordHistory(BodyComponent& body);
@@ -97,6 +101,10 @@ class SimulationSystem {
   double telemetry_clock_ = 0.0;
   SimulationStats stats_;
   std::vector<SimulationEvent> events_;
+  // What autonomous agents sense this step, and per-agent scratch.
+  std::vector<SceneObstacle> obstacles_;
+  std::vector<sim::AgentObstacle> agent_shapes_;
+  std::vector<EntityId> agent_ids_;
 };
 
 // Uses the entity's current world pose as the body's launch pose (keeping
@@ -123,6 +131,10 @@ Mat4 RenderWorldMatrix(const Scene& scene, EntityId id, double alpha);
 // World-space bounds of the entity's mesh at its rendered pose.
 std::optional<Aabb> RenderWorldBounds(const Scene& scene, EntityId id,
                                       double alpha);
+
+// Potential energy of a body: its force model's terms, or plain gravity
+// for autonomous bodies (which ignore the force model).
+double PotentialEnergy(const BodyComponent& body);
 
 // Total mechanical energy (kinetic + potential) of a body.
 double MechanicalEnergy(const BodyComponent& body);

@@ -60,6 +60,7 @@ aerolab_add_library(aerolab_scene
 aerolab_add_library(aerolab_world
   SOURCES
     world/animation.cc
+    world/autonomy.cc
     world/debug_visualizer.cc
     world/picking.cc
     world/presets.cc

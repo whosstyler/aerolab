@@ -24,6 +24,8 @@ enum class MotionPreset {
   kCirclePath,   // Kinematic banked circle.
   kFigureEight,  // Kinematic figure-eight.
   kHelix,        // Kinematic climbing spiral.
+  kAutoHover,    // Flies itself, multirotor-style (game AI).
+  kAutoWing,     // Flies itself, airplane-style (game AI).
   kCount,
 };
 

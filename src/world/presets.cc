@@ -11,8 +11,10 @@
 #include "math/quat.h"
 #include "math/scalar.h"
 #include "math/transform.h"
+#include "sim/flight_agent.h"
 #include "sim/kinematic_path.h"
 #include "sim/rigid_body.h"
+#include "world/autonomy.h"
 #include "world/simulation.h"
 #include "world/spawner.h"
 
@@ -42,6 +44,10 @@ Color PresetTrailColor(MotionPreset preset) {
       return FromHex(0xF9A8D4);
     case MotionPreset::kTumble:
       return FromHex(0xFDE68A);
+    case MotionPreset::kAutoHover:
+      return FromHex(0x5EEAD4);
+    case MotionPreset::kAutoWing:
+      return FromHex(0x99F6E4);
     case MotionPreset::kCirclePath:
     case MotionPreset::kFigureEight:
     case MotionPreset::kHelix:
@@ -73,6 +79,10 @@ std::string_view MotionPresetName(MotionPreset preset) {
       return "Figure-eight path";
     case MotionPreset::kHelix:
       return "Helix path";
+    case MotionPreset::kAutoHover:
+      return "AI hover flight";
+    case MotionPreset::kAutoWing:
+      return "AI wing flight";
     case MotionPreset::kCount:
       break;
   }
@@ -107,6 +117,16 @@ std::string_view MotionPresetDescription(MotionPreset preset) {
              "acceleration.";
     case MotionPreset::kHelix:
       return "Kinematic: a circle with constant climb rate.";
+    case MotionPreset::kAutoHover:
+      return "Flies itself like a game AI: picks its own destinations and "
+             "speeds, hovers for a while, and steers clear of the ground, "
+             "obstacles and other objects. Multirotor-style: it can stop "
+             "and tilts to accelerate.";
+    case MotionPreset::kAutoWing:
+      return "Flies itself like a game AI: picks its own destinations and "
+             "speeds, circles for a while, and steers clear of the ground, "
+             "obstacles and other objects. Airplane-style: it never stops "
+             "and banks to turn.";
     case MotionPreset::kCount:
       break;
   }
@@ -222,6 +242,22 @@ void ApplyMotionPreset(Scene& scene, EntityId id, MotionPreset preset) {
       path.center = sim::PathCenterForStart(path, world.position);
       break;
     }
+    case MotionPreset::kAutoHover:
+    case MotionPreset::kAutoWing: {
+      const sim::FlightStyle style = preset == MotionPreset::kAutoWing
+                                         ? sim::FlightStyle::kWing
+                                         : sim::FlightStyle::kHover;
+      body.motion = MotionType::kAutonomous;
+      body.ground_contact = false;
+      body.agent = AgentParamsFor(scene, id, style);
+      body.mass = style == sim::FlightStyle::kWing
+                      ? sim::BoxMassProperties(1.5, {2.4, 0.3, 1.8})
+                      : sim::BoxMassProperties(1.2, {0.9, 0.25, 0.9});
+      if (style == sim::FlightStyle::kWing) {
+        launch.velocity = forward * body.agent.cruise_speed_min;
+      }
+      break;
+    }
     case MotionPreset::kCount:
       return;
   }
@@ -254,10 +290,11 @@ void BuildDemoScene(Scene& scene) {
         MotionPreset::kPowered);
   spawn(Archetype::kFixedWing, "Glider", {-60.0, 45.0, -25.0},
         {.yaw = -kHalfPi, .pitch = 0.0, .roll = 0.0}, MotionPreset::kGlider);
-  spawn(Archetype::kFixedWing, "Patrol circle", {35.0, 20.0, -15.0},
-        {.yaw = 0.0, .pitch = 0.0, .roll = 0.0}, MotionPreset::kCirclePath);
+  // The patrol plane and the quadrotor fly themselves.
+  spawn(Archetype::kFixedWing, "Patrol plane", {35.0, 20.0, -15.0},
+        {.yaw = 0.0, .pitch = 0.0, .roll = 0.0}, MotionPreset::kAutoWing);
   spawn(Archetype::kQuadrotor, "Quadrotor", {0.0, 7.0, -20.0},
-        {.yaw = 0.0, .pitch = 0.0, .roll = 0.0}, MotionPreset::kFigureEight);
+        {.yaw = 0.0, .pitch = 0.0, .roll = 0.0}, MotionPreset::kAutoHover);
   spawn(Archetype::kSphere, "Orbiter", {48.0, 14.0, 20.0},
         {.yaw = 0.0, .pitch = 0.0, .roll = 0.0}, MotionPreset::kOrbit);
   spawn(Archetype::kSphere, "Oscillator", {-30.0, 10.0, -5.0},

@@ -57,6 +57,7 @@ aerolab_add_test(scene_test
 
 aerolab_add_test(world_test
   SOURCES
+    world/autonomy_test.cc
     world/simulation_test.cc
     world/world_test.cc
   DEPS aerolab_world)
