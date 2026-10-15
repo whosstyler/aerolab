@@ -20,6 +20,7 @@ aerolab_add_test(math_test
     math/transform_test.cc
     math/projection_test.cc
     math/intersection_test.cc
+    math/random_test.cc
   DEPS aerolab_math)
 
 aerolab_add_test(core_test
@@ -39,6 +40,7 @@ aerolab_add_test(geometry_test
 
 aerolab_add_test(sim_test
   SOURCES
+    sim/flight_agent_test.cc
     sim/force_model_test.cc
     sim/integrator_test.cc
   DEPS aerolab_sim)

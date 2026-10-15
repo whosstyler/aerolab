@@ -39,6 +39,7 @@ aerolab_add_library(aerolab_geometry
 
 aerolab_add_library(aerolab_sim
   SOURCES
+    sim/flight_agent.cc
     sim/force_model.cc
     sim/integrator.cc
     sim/kinematic_path.cc
