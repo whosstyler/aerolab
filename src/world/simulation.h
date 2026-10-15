@@ -138,7 +138,8 @@ std::optional<Aabb> RenderWorldBounds(const Scene& scene, EntityId id,
 const sim::MassProperties& SimulatedMass(const BodyComponent& body);
 
 // Potential energy of a body: its force model's terms, or plain gravity
-// for autonomous bodies (which ignore the force model).
+// for autonomous bodies (which use only the force model's wind, and only
+// with the physical flight model).
 double PotentialEnergy(const BodyComponent& body);
 
 // Total mechanical energy (kinetic + potential) of a body.

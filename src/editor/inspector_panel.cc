@@ -114,7 +114,8 @@ void DrawLiveState(const BodyComponent& body) {
       PropertyText("Kinetic energy", std::format("{:.1f} J", kinetic));
       PropertyText("Potential energy", std::format("{:.1f} J", potential),
                    body.motion == MotionType::kAutonomous
-                       ? "Gravity only: agents ignore the force model"
+                       ? "Gravity only: agents ignore the force model "
+                         "(physical agents feel only its wind)"
                        : "Gravity, spring and central-body terms");
       PropertyText("Total energy",
                    std::format("{:.1f} J", kinetic + potential));
@@ -499,6 +500,11 @@ void DrawAutopilotSettings(EditorFrame& frame, EntityId id,
         }
       }
       ImGui::EndCombo();
+    }
+    if (agent.model == sim::FlightModel::kPhysical) {
+      PropertyVec3("Wind", &body.forces.wind, 0.05f, "%.1f",
+                   "Velocity of the air the airframe flies through, m/s. "
+                   "The autopilot holds its course by crabbing into it.");
     }
     PropertyVec3("Area centre", &agent.area.center, 0.1f, "%.1f",
                  "Centre of the flight area (its height is ignored)");
