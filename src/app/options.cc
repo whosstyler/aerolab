@@ -19,6 +19,8 @@ constexpr std::string_view kUsage =
     "  --no-vsync         Disable vertical sync.\n"
     "  --hidden           Do not show the window (automated runs).\n"
     "  --select NAME      Select and follow the named object at startup.\n"
+    "  --first-person     Start looking through an observer on the ground\n"
+    "                     (with --select: turn to face it, do not follow).\n"
     "  --help             Show this message.\n";
 
 std::optional<int> ParsePositiveInt(std::string_view text) {
@@ -70,6 +72,8 @@ ParseResult ParseCommandLine(std::span<const std::string_view> args) {
       options.vsync = false;
     } else if (arg == "--hidden") {
       options.hidden_window = true;
+    } else if (arg == "--first-person") {
+      options.first_person = true;
     } else {
       return Error("unknown option '" + std::string(arg) + "'");
     }

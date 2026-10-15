@@ -41,7 +41,8 @@ float Dpi();
 EntityId SpawnObject(EditorFrame& frame, Archetype archetype,
                      std::optional<MotionPreset> preset);
 
-// Menu items for every archetype x motion preset combination.
+// Menu items for every archetype x motion preset combination, plus placing
+// a first-person observer.
 void SpawnMenuItems(EditorFrame& frame);
 
 // Resets the simulation and starts a new run in the event log, so the
@@ -51,6 +52,24 @@ void ResetSimulation(EditorFrame& frame);
 void FocusSelection(EditorFrame& frame);
 void FrameWholeScene(EditorFrame& frame);
 void DeleteSelection(EditorFrame& frame);
+
+// First person. Observers are standing figures the camera can look
+// through; while it does, the figure walks with the camera.
+bool IsObserver(const Entity& entity);
+// Places an observer on the ground where the camera is looking, facing the
+// same way, and looks through it.
+EntityId SpawnObserver(EditorFrame& frame);
+// Switches the camera to first person through `observer`.
+void LookThrough(EditorFrame& frame, EntityId observer);
+// The First person button and key 4: look through the selected observer,
+// else the last one used, else a newly placed one. Already in first
+// person, only a different selected observer switches the view (and a
+// deleted figure is replaced where you stand).
+void EnterFirstPersonView(EditorFrame& frame);
+
+// Where new objects appear: the orbit pivot, or a little way in front of
+// the eye in free-fly and first person.
+Vec3 SpawnPoint(const CameraRig& rig);
 
 }  // namespace aerolab::editor
 

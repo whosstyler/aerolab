@@ -5,6 +5,7 @@
 #include <SDL3/SDL_video.h>
 
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <memory>
@@ -19,14 +20,20 @@
 #include "app/sdl_input.h"
 #include "core/log.h"
 #include "math/aabb.h"
+#include "math/quat.h"
+#include "math/transform.h"
 #include "math/vec3.h"
 #include "render/gl.h"
 #include "render/readback.h"
 #include "scene/entity.h"
 #include "world/presets.h"
+#include "world/spawner.h"
 
 namespace aerolab {
 namespace {
+
+// Objects up to this far above the first-person eye still block the walker.
+constexpr double kHeadClearance = 0.15;  // m
 
 GlProc LoadGlProc(const char* name) { return SDL_GL_GetProcAddress(name); }
 
@@ -106,12 +113,23 @@ void Application::BuildDefaultScene() {
   camera_rig_.LookAt({48.0, 26.0, 60.0}, {0.0, 10.0, 0.0});
   LogInfo("Demo scene ready: {} entities. Press F1 for controls.",
           scene_.size());
+  if (options_.first_person) {
+    // An observer at the edge of the action, facing the middle of it.
+    const Vec3 spot{22.0, 0.0, 34.0};
+    const double yaw = std::atan2(spot.x, spot.z);  // Toward the origin.
+    viewpoint_.observer =
+        Spawn(scene_, Archetype::kObserver, spot,
+              FromEuler({.yaw = yaw, .pitch = 0.0, .roll = 0.0}));
+    camera_rig_.EnterFirstPerson(spot, yaw);
+  }
   if (!options_.select_name.empty()) {
     for (EntityId id : scene_.roots()) {
       const Entity* entity = scene_.Get(id);
       if (entity == nullptr || entity->name != options_.select_name) continue;
       selection_.selected = id;
-      camera_rig_.SetMode(CameraMode::kFollow);
+      // In first person, stay put and turn to face it instead of following.
+      if (!options_.first_person) camera_rig_.SetMode(CameraMode::kFollow);
+      if (id == viewpoint_.observer) break;
       if (const std::optional<Aabb> bounds = scene_.WorldBounds(id)) {
         camera_rig_.Focus(Center(*bounds), BoundingRadius(*bounds) * 4.0);
       }
@@ -199,7 +217,60 @@ void Application::UpdateCamera(double frame_dt) {
           RenderWorldBounds(scene_, selection_.selected, simulation_.alpha())) {
     follow_target = Center(*bounds);
   }
-  camera_rig_.Update(camera_input, frame_dt, follow_target);
+  // First person: walk around (not through) whatever stands on the ground,
+  // and carry the observer figure along.
+  if (!scene_.IsAlive(viewpoint_.observer)) viewpoint_.observer = kNoEntity;
+  const bool first_person = camera_rig_.mode() == CameraMode::kFirstPerson;
+  if (first_person && IsSet(viewpoint_.observer)) FollowObserverEdits();
+  walk_blockers_.clear();
+  if (first_person) CollectWalkBlockers();
+  camera_rig_.Update(camera_input, frame_dt, follow_target, walk_blockers_);
+  if (first_person && IsSet(viewpoint_.observer)) {
+    scene_.SetWorldPose(viewpoint_.observer, camera_rig_.feet(),
+                        FromEuler({.yaw = camera_rig_.yaw()}));
+    RecordViewpointSync(scene_, viewpoint_.observer, viewpoint_sync_);
+  }
+}
+
+EntityId Application::HiddenEntity() const {
+  return camera_rig_.mode() == CameraMode::kFirstPerson ? viewpoint_.observer
+                                                        : kNoEntity;
+}
+
+void Application::FollowObserverEdits() {
+  // The camera drives the figure; but if the figure was moved by something
+  // else since the last frame (an inspector edit), the camera follows it.
+  if (!ObserverMovedSinceSync(scene_, viewpoint_.observer, viewpoint_sync_)) {
+    return;
+  }
+  const Transform world = scene_.WorldTransform(viewpoint_.observer);
+  const Vec3 forward = Rotate(world.rotation, -Vec3::UnitZ());
+  const double yaw = std::hypot(forward.x, forward.z) > 1e-9
+                         ? std::atan2(-forward.x, -forward.z)
+                         : camera_rig_.yaw();
+  camera_rig_.EnterFirstPerson(world.position, yaw, camera_rig_.pitch());
+}
+
+void Application::CollectWalkBlockers() {
+  CollectObstacles(scene_, obstacle_scratch_);
+  // Things up to just above head height are in the way.
+  const double height = camera_rig_.settings().eye_height + kHeadClearance;
+  for (const SceneObstacle& obstacle : obstacle_scratch_) {
+    if (IsSet(viewpoint_.observer) &&
+        scene_.IsAncestorOrSelf(viewpoint_.observer, obstacle.id)) {
+      continue;
+    }
+    // What you cannot see does not get in your way.
+    const Entity* entity = scene_.Get(obstacle.id);
+    if (entity != nullptr && entity->render.has_value() &&
+        !entity->render->visible) {
+      continue;
+    }
+    if (const std::optional<WalkBlocker> blocker = WalkBlockerFromSphere(
+            obstacle.shape.center, obstacle.shape.radius, height)) {
+      walk_blockers_.push_back(*blocker);
+    }
+  }
 }
 
 void Application::UpdateSimulation(double frame_dt) {
@@ -242,12 +313,14 @@ void Application::RenderScene() {
 
   const double alpha = simulation_.alpha();
   debug_options_.prediction_step = simulation_.fixed_step();
-  render_items_ = BuildRenderItems(scene_, selection_, alpha);
+  // The observer being looked through is not drawn in its own view.
+  const EntityId hidden = HiddenEntity();
+  render_items_ = BuildRenderItems(scene_, selection_, alpha, hidden);
   world_lines_.Clear();
   overlay_lines_.Clear();
   AddDebugVisualization(scene_, debug_options_, alpha, selection_.selected,
-                        world_lines_);
-  AddSelectionOverlay(scene_, selection_, overlay_lines_, alpha);
+                        world_lines_, hidden);
+  AddSelectionOverlay(scene_, selection_, overlay_lines_, alpha, hidden);
 
   scene_gpu_timer_.Begin();
   viewport_target_.BindForDrawing();
@@ -272,6 +345,8 @@ void Application::RenderUi() {
   frame.render_settings = &render_settings_;
   frame.debug_options = &debug_options_;
   frame.selection = &selection_;
+  frame.viewpoint = &viewpoint_;
+  frame.hidden_entity = HiddenEntity();
   frame.event_log = &event_log_;
   frame.frame_stats = &frame_stats_;
   frame.render_stats = &renderer_->stats();

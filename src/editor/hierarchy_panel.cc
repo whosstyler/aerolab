@@ -55,6 +55,7 @@ const char* TypeTag(const Entity& entity) {
     return "dynamic";
   }
   if (entity.spin.has_value()) return "spinner";
+  if (IsObserver(entity)) return "observer";
   if (entity.render.has_value()) return "static";
   return "group";
 }
@@ -120,6 +121,9 @@ void DrawNode(TreeContext& context, EntityId id) {
   if (ImGui::BeginPopupContextItem("##context")) {
     context.frame->selection->selected = id;
     if (ImGui::MenuItem("Focus", "F")) FocusSelection(*context.frame);
+    if (IsObserver(*entity) && ImGui::MenuItem("Look through", "4")) {
+      LookThrough(*context.frame, id);
+    }
     if (ImGui::MenuItem("Unparent", nullptr, false,
                         scene.IsAlive(entity->parent))) {
       context.pending_unparent = id;

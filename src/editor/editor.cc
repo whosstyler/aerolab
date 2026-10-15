@@ -41,15 +41,16 @@ void DrawHelpWindow(bool* open) {
     ImGui::End();
     return;
   }
-  constexpr std::array<std::array<const char*, 2>, 13> kRows = {{
+  constexpr std::array<std::array<const char*, 2>, 14> kRows = {{
       {"Right drag", "Orbit / look around"},
       {"Middle drag", "Pan"},
-      {"Mouse wheel", "Zoom (orbit) / speed (free-fly)"},
+      {"Mouse wheel", "Zoom (orbit) / speed (free-fly, first person)"},
       {"W A S D, Q E", "Move (free-fly) / slide pivot (orbit)"},
-      {"Shift / Ctrl", "Faster / slower"},
+      {"W A S D", "Walk (first person)"},
+      {"Shift / Ctrl", "Faster / slower (run / creep)"},
       {"Left click", "Select object"},
-      {"F", "Focus selection"},
-      {"1 / 2 / 3", "Free-fly / orbit / follow camera"},
+      {"F", "Focus selection (first person: turn to face it)"},
+      {"1 / 2 / 3 / 4", "Free-fly / orbit / follow / first person"},
       {"Space", "Play / pause simulation"},
       {".", "Single step"},
       {"R", "Reset simulation"},
@@ -183,6 +184,7 @@ void Editor::HandleShortcuts(EditorFrame& frame) {
   if (pressed(ImGuiKey_1)) frame.camera->SetMode(CameraMode::kFreeFly);
   if (pressed(ImGuiKey_2)) frame.camera->SetMode(CameraMode::kOrbit);
   if (pressed(ImGuiKey_3)) frame.camera->SetMode(CameraMode::kFollow);
+  if (pressed(ImGuiKey_4)) EnterFirstPersonView(frame);
   if (pressed(ImGuiKey_F1)) state_.show_help = !state_.show_help;
 }
 
@@ -200,7 +202,7 @@ void Editor::DrawMenuBar(EditorFrame& frame, EditorRequests& requests) {
       ImGui::EndMenu();
     }
     if (ImGui::MenuItem("Integrator comparison")) {
-      const Vec3 center = frame.camera->pivot() + Vec3{0.0, 8.0, 0.0};
+      const Vec3 center = SpawnPoint(*frame.camera) + Vec3{0.0, 8.0, 0.0};
       frame.selection->selected =
           SpawnIntegratorComparison(*frame.scene, center);
       LogInfo("Spawned an integrator comparison (one orbit per method)");
@@ -296,15 +298,25 @@ void Editor::DrawToolbar(EditorFrame& frame, float y, float height) {
   ToolbarSeparator();
   ImGui::TextDisabled("Camera");
   ImGui::SameLine();
-  constexpr std::array<CameraMode, 3> kModes = {
-      CameraMode::kOrbit, CameraMode::kFreeFly, CameraMode::kFollow};
+  constexpr std::array<CameraMode, 4> kModes = {
+      CameraMode::kOrbit, CameraMode::kFreeFly, CameraMode::kFollow,
+      CameraMode::kFirstPerson};
   for (CameraMode mode : kModes) {
     bool active = frame.camera->mode() == mode;
-    if (ToggleButton(CameraModeName(mode), &active,
-                     mode == CameraMode::kFollow
-                         ? "Orbit around the selected object as it moves (3)"
-                         : nullptr)) {
-      frame.camera->SetMode(mode);
+    const char* tooltip = nullptr;
+    if (mode == CameraMode::kFollow) {
+      tooltip = "Orbit around the selected object as it moves (3)";
+    } else if (mode == CameraMode::kFirstPerson) {
+      tooltip =
+          "Stand on the ground and look through an observer's eyes: WASD "
+          "walks, Shift runs, right-drag looks (4)";
+    }
+    if (ToggleButton(CameraModeName(mode), &active, tooltip)) {
+      if (mode == CameraMode::kFirstPerson) {
+        EnterFirstPersonView(frame);
+      } else {
+        frame.camera->SetMode(mode);
+      }
     }
     ImGui::SameLine();
   }

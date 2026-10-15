@@ -2,6 +2,7 @@
 
 #include <gtest/gtest.h>
 
+#include <cstddef>
 #include <vector>
 
 #include "geometry/color.h"
@@ -31,6 +32,23 @@ TEST(ScenePresenterTest, OneItemPerVisibleMesh) {
   ASSERT_EQ(items.size(), 1u);
   EXPECT_EQ(items[0].mesh, MeshKind::kCube);
   EXPECT_EQ(items[0].highlight, 0.0f);
+}
+
+TEST(ScenePresenterTest, HiddenEntityAndItsPartsAreLeftOut) {
+  Scene scene;
+  Spawn(scene, Archetype::kCube, {0, 0, 0});
+  const EntityId quad = Spawn(scene, Archetype::kQuadrotor, {2, 0, 0});
+  const std::size_t all = BuildRenderItems(scene, SelectionState{}).size();
+  ASSERT_GT(all, 2u);  // Cube, frame and rotors.
+  const std::vector<RenderItem> items =
+      BuildRenderItems(scene, SelectionState{}, 1.0, quad);
+  ASSERT_EQ(items.size(), 1u);
+  EXPECT_EQ(items[0].mesh, MeshKind::kCube);
+  // Selecting the hidden entity draws no overlay for it either.
+  DebugDrawList lines;
+  AddSelectionOverlay(scene, SelectionState{.selected = quad, .hovered = {}},
+                      lines, 1.0, quad);
+  EXPECT_EQ(lines.segment_count(), 0u);
 }
 
 TEST(ScenePresenterTest, SelectionHighlightsWholeSubtree) {

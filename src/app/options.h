@@ -17,6 +17,8 @@ struct AppOptions {
   // Name of a root object to select (and focus) at startup; for demos and
   // automated screenshots.
   std::string select_name;
+  // Start in first person, through an observer standing in the scene.
+  bool first_person = false;
 };
 
 enum class ParseStatus { kRun, kHelp, kError };

@@ -80,7 +80,7 @@ void DrawLabels(const EditorFrame& frame, const Mat4& view_projection,
   for (EntityId id : scene.roots()) {
     // Label moving objects; static props only when selected or hovered.
     const Entity* entity = scene.Get(id);
-    if (entity == nullptr) continue;
+    if (entity == nullptr || id == frame.hidden_entity) continue;
     const bool emphasized =
         id == frame.selection->selected || id == frame.selection->hovered;
     if (!entity->body.has_value() && !emphasized) continue;
@@ -110,6 +110,9 @@ void DrawHud(const EditorFrame& frame, const ImageMapping& image,
   if (frame.camera->mode() == CameraMode::kFreeFly) {
     text += std::format("   cruise {:.1f} m/s",
                         frame.camera->settings().move_speed);
+  } else if (frame.camera->mode() == CameraMode::kFirstPerson) {
+    text +=
+        std::format("   walk {:.1f} m/s", frame.camera->settings().walk_speed);
   }
   if (hover.has_value()) {
     if (const Entity* entity = frame.scene->Get(hover->entity)) {
@@ -216,7 +219,8 @@ void DrawViewportPanel(EditorFrame& frame, const EditorState& state,
                             image.texture_height};
       const Ray ray =
           ScreenToWorldRay(*inverse, image.ToPixel(io.MousePos), rect);
-      hover = PickEntity(*frame.scene, ray, frame.simulation->alpha());
+      hover = PickEntity(*frame.scene, ray, frame.simulation->alpha(),
+                         frame.hidden_entity);
     }
   }
   frame.selection->hovered = hover.has_value() ? hover->entity : kNoEntity;

@@ -536,6 +536,16 @@ void DrawMaterial(Entity& entity) {
   }
 }
 
+void DrawObserver(EditorFrame& frame, EntityId id) {
+  if (!ImGui::CollapsingHeader("First person", kOpen)) return;
+  HelpText(
+      "A standing figure to look through. In first person, WASD walks "
+      "(Shift runs, Ctrl creeps), right-drag looks around, the wheel sets "
+      "walking speed and F turns to face the selection. The figure walks "
+      "with you; other camera modes show where it is.");
+  if (ImGui::Button("Look through (4)")) LookThrough(frame, id);
+}
+
 void DrawAddBody(EditorFrame& frame, EntityId id) {
   if (!ImGui::CollapsingHeader("Simulation", kOpen)) return;
   HelpText("This object is static. Give it a motion preset to simulate it.");
@@ -601,6 +611,8 @@ void DrawInspectorPanel(EditorFrame& frame) {
       DrawForces(body.forces);
       DrawGround(body);
     }
+  } else if (IsObserver(*entity)) {
+    DrawObserver(frame, id);
   } else {
     DrawAddBody(frame, id);
   }

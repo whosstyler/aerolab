@@ -27,6 +27,10 @@ struct EditorFrame {
   RenderSettings* render_settings = nullptr;
   DebugViewOptions* debug_options = nullptr;
   SelectionState* selection = nullptr;
+  ViewpointState* viewpoint = nullptr;
+  // The observer the camera is looking through in first person, if any:
+  // not labelled or pickable in the viewport.
+  EntityId hidden_entity;
   EventLog* event_log = nullptr;
 
   const FrameStats* frame_stats = nullptr;

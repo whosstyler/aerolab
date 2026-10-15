@@ -105,4 +105,8 @@ if(AEROLAB_BUILD_APP)
     LABELS gpu TIMEOUT 60
     # Fail if the demo object was renamed and nothing got selected.
     FAIL_REGULAR_EXPRESSION "no object named")
+  # Exercises first person: walk blockers and the hidden observer.
+  add_test(NAME app_smoke_first_person
+           COMMAND aerolab --hidden --no-vsync --frames 90 --first-person)
+  set_tests_properties(app_smoke_first_person PROPERTIES LABELS gpu TIMEOUT 60)
 endif()

@@ -14,14 +14,18 @@
 #include "core/input.h"
 #include "editor/editor.h"
 #include "geometry/debug_draw.h"
+#include "math/quat.h"
+#include "math/vec3.h"
 #include "render/gpu_timer.h"
 #include "render/render_target.h"
 #include "render/render_types.h"
 #include "render/renderer.h"
 #include "scene/scene.h"
+#include "world/autonomy.h"
 #include "world/debug_visualizer.h"
 #include "world/selection.h"
 #include "world/simulation.h"
+#include "world/viewpoint.h"
 
 namespace aerolab {
 
@@ -49,6 +53,14 @@ class Application {
   void ProcessEvents();
   void RunFrame(double frame_dt);
   void UpdateCamera(double frame_dt);
+  // Fills walk_blockers_ from the scene for first-person walking.
+  void CollectWalkBlockers();
+  // Moves the first-person camera to the observer if the observer was moved
+  // by something other than the camera since the last frame.
+  void FollowObserverEdits();
+  // The observer being looked through, if any: not drawn, labelled,
+  // overlaid or pickable.
+  EntityId HiddenEntity() const;
   void UpdateSimulation(double frame_dt);
   void RenderScene();
   void RenderUi();
@@ -71,6 +83,12 @@ class Application {
   SimulationSystem simulation_;
   DebugViewOptions debug_options_;
   SelectionState selection_;
+  ViewpointState viewpoint_;
+  // The observer pose the camera last wrote, to notice outside edits.
+  ViewpointSync viewpoint_sync_;
+  // Per-frame scratch for first-person walking.
+  std::vector<SceneObstacle> obstacle_scratch_;
+  std::vector<WalkBlocker> walk_blockers_;
   EventLog event_log_;
   FrameStats frame_stats_;
   editor::Editor editor_;

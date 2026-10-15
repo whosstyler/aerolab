@@ -19,16 +19,19 @@ TEST(OptionsTest, DefaultsWithNoArguments) {
   EXPECT_TRUE(result.options.vsync);
   EXPECT_FALSE(result.options.hidden_window);
   EXPECT_TRUE(result.options.screenshot_path.empty());
+  EXPECT_FALSE(result.options.first_person);
 }
 
 TEST(OptionsTest, ParsesAllFlags) {
-  const ParseResult result = Parse(
-      {"--frames", "12", "--screenshot", "out.png", "--no-vsync", "--hidden"});
+  const ParseResult result =
+      Parse({"--frames", "12", "--screenshot", "out.png", "--no-vsync",
+             "--hidden", "--first-person"});
   ASSERT_EQ(result.status, ParseStatus::kRun);
   EXPECT_EQ(result.options.max_frames, 12);
   EXPECT_EQ(result.options.screenshot_path, "out.png");
   EXPECT_FALSE(result.options.vsync);
   EXPECT_TRUE(result.options.hidden_window);
+  EXPECT_TRUE(result.options.first_person);
 }
 
 TEST(OptionsTest, HelpIsNotAnError) {

@@ -21,12 +21,13 @@ bool InSubtree(const Scene& scene, EntityId root, EntityId id) {
 
 std::vector<RenderItem> BuildRenderItems(const Scene& scene,
                                          const SelectionState& selection,
-                                         double alpha) {
+                                         double alpha, EntityId hidden) {
   std::vector<RenderItem> items;
   items.reserve(scene.size());
   for (EntityId id : scene.AllEntities()) {
     const Entity* entity = scene.Get(id);
     if (!entity->render.has_value() || !entity->render->visible) continue;
+    if (InSubtree(scene, hidden, id)) continue;
     RenderItem item;
     item.mesh = entity->render->mesh;
     item.model = RenderWorldMatrix(scene, id, alpha);
@@ -45,16 +46,19 @@ std::vector<RenderItem> BuildRenderItems(const Scene& scene,
 }
 
 void AddSelectionOverlay(const Scene& scene, const SelectionState& selection,
-                         DebugDrawList& lines, double alpha) {
+                         DebugDrawList& lines, double alpha, EntityId hidden) {
   if (const Entity* hovered = scene.Get(selection.hovered);
       hovered != nullptr && hovered->render.has_value() &&
-      selection.hovered != selection.selected) {
+      selection.hovered != selection.selected &&
+      !InSubtree(scene, hidden, selection.hovered)) {
     lines.AddOrientedBox(MeshLocalBounds(hovered->render->mesh),
                          RenderWorldMatrix(scene, selection.hovered, alpha),
                          WithAlpha(colors::kHover, 0.6f));
   }
   const Entity* selected = scene.Get(selection.selected);
-  if (selected == nullptr) return;
+  if (selected == nullptr || InSubtree(scene, hidden, selection.selected)) {
+    return;
+  }
   const Mat4 world = RenderWorldMatrix(scene, selection.selected, alpha);
   double frame_size = 1.0;
   if (selected->render.has_value()) {
