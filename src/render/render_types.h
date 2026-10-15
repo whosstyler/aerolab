@@ -1,6 +1,8 @@
 #ifndef AEROLAB_RENDER_RENDER_TYPES_H_
 #define AEROLAB_RENDER_RENDER_TYPES_H_
 
+#include <cstdint>
+
 #include "geometry/color.h"
 #include "geometry/material.h"
 #include "geometry/mesh_library.h"
@@ -71,8 +73,8 @@ struct RenderSettings {
 // Per-frame counters reported to the profiler panel.
 struct RenderStats {
   int draw_calls = 0;
-  long long triangles = 0;
-  long long line_segments = 0;
+  std::int64_t triangles = 0;
+  std::int64_t line_segments = 0;
 };
 
 // Unit vector pointing from the scene toward the sun.

@@ -2,6 +2,7 @@
 #define AEROLAB_CORE_CLOCK_H_
 
 #include <chrono>
+#include <cstdint>
 
 namespace aerolab {
 
@@ -36,13 +37,13 @@ class FrameClock {
 
   // Unclamped delta from the most recent Tick().
   double raw_delta_seconds() const { return raw_delta_seconds_; }
-  long long frame_count() const { return frame_count_; }
+  std::int64_t frame_count() const { return frame_count_; }
 
  private:
   double max_delta_seconds_;
   double last_seconds_ = 0.0;
   double raw_delta_seconds_ = 0.0;
-  long long frame_count_ = 0;
+  std::int64_t frame_count_ = 0;
   bool has_last_ = false;
 };
 

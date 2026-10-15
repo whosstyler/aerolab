@@ -267,11 +267,14 @@ inline constexpr GLenum GL_TIME_ELAPSED = 0x88BF;
   X(void, GetQueryObjectiv, (GLuint id, GLenum pname, GLint * params))        \
   X(void, GetQueryObjectui64v, (GLuint id, GLenum pname, GLuint64 * params))
 
+// NOLINTBEGIN(bugprone-macro-parentheses): `params` is a parenthesized
+// parameter list and must be pasted verbatim.
 #define AEROLAB_GL_DECLARE(return_type, name, params)            \
   using PFNGL_##name = return_type(AEROLAB_GL_APIENTRY*) params; \
   extern PFNGL_##name gl##name;
 AEROLAB_GL_FUNCTIONS(AEROLAB_GL_DECLARE)
 #undef AEROLAB_GL_DECLARE
+// NOLINTEND(bugprone-macro-parentheses)
 
 // A generic function pointer, as returned by SDL_GL_GetProcAddress.
 using GlProc = void (*)();

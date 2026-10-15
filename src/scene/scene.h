@@ -83,8 +83,9 @@ class Scene {
   template <typename Fn>
   void ForEachEntity(Fn&& fn) {
     for (std::uint32_t i = 0; i < slots_.size(); ++i) {
-      if (slots_[i].alive)
+      if (slots_[i].alive) {
         fn(EntityId{i, slots_[i].generation}, slots_[i].entity);
+      }
     }
   }
   template <typename Fn>

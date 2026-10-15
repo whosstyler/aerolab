@@ -2,6 +2,7 @@
 #define AEROLAB_MATH_MAT4_H_
 
 #include <array>
+#include <cstddef>
 #include <optional>
 
 #include "math/mat3.h"
@@ -63,10 +64,10 @@ class Mat4 {
                   const Vec3& scale);
 
   constexpr double operator()(int row, int col) const {
-    return elements_[col * 4 + row];
+    return elements_[static_cast<std::size_t>(col * 4 + row)];
   }
   constexpr double& operator()(int row, int col) {
-    return elements_[col * 4 + row];
+    return elements_[static_cast<std::size_t>(col * 4 + row)];
   }
 
   constexpr Vec4 Column(int col) const {

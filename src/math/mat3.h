@@ -2,6 +2,7 @@
 #define AEROLAB_MATH_MAT3_H_
 
 #include <array>
+#include <cstddef>
 #include <optional>
 
 #include "math/scalar.h"
@@ -43,10 +44,10 @@ class Mat3 {
   }
 
   constexpr double operator()(int row, int col) const {
-    return elements_[col * 3 + row];
+    return elements_[static_cast<std::size_t>(col * 3 + row)];
   }
   constexpr double& operator()(int row, int col) {
-    return elements_[col * 3 + row];
+    return elements_[static_cast<std::size_t>(col * 3 + row)];
   }
 
   constexpr Vec3 Column(int col) const {

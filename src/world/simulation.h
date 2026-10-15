@@ -81,9 +81,11 @@ class SimulationSystem {
 
  private:
   void Step(Scene& scene, double dt);
-  void StepBody(EntityId id, Entity& entity, double dt);
-  void ApplyGroundContact(EntityId id, Entity& entity);
-  void RecordHistory(Entity& entity);
+  void StepBody(EntityId id, const std::string& name, BodyComponent& body,
+                double dt);
+  void ApplyGroundContact(EntityId id, const std::string& name,
+                          BodyComponent& body);
+  void RecordHistory(BodyComponent& body);
   void PushEvent(SimulationEvent::Kind kind, EntityId id, std::string message);
 
   FixedTimestep timestep_;

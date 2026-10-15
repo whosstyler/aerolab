@@ -240,6 +240,8 @@ void BuildDemoScene(Scene& scene) {
                               const Vec3& position, const EulerAngles& angles,
                               MotionPreset preset) {
     const EntityId id = Spawn(scene, archetype, position, FromEuler(angles));
+    // Clear the default name first so it does not collide with itself.
+    scene.Get(id)->name.clear();
     scene.Get(id)->name = scene.MakeUniqueName(name);
     ApplyMotionPreset(scene, id, preset);
     return id;
@@ -265,9 +267,12 @@ void BuildDemoScene(Scene& scene) {
 
   const EntityId tumbler = Spawn(scene, Archetype::kCube, {15.0, 12.0, 25.0});
   Entity* box = scene.Get(tumbler);
+  box->name.clear();
   box->name = scene.MakeUniqueName("Tumbling box");
   box->local.scale = {0.3, 1.0, 1.8};
-  box->render->material.base_color = FromHex(0xE8C547);
+  if (box->render.has_value()) {
+    box->render->material.base_color = FromHex(0xE8C547);
+  }
   ApplyMotionPreset(scene, tumbler, MotionPreset::kTumble);
 
   // Static landmarks give the ground scale and depth cues.
@@ -288,8 +293,11 @@ EntityId SpawnIntegratorComparison(Scene& scene, const Vec3& center) {
     Entity* entity = scene.Get(id);
     entity->name = std::string(sim::IntegratorName(integrator));
     entity->local.scale = {0.5, 0.5, 0.5};
-    entity->render->material.base_color = IntegratorColor(integrator);
+    if (entity->render.has_value()) {
+      entity->render->material.base_color = IntegratorColor(integrator);
+    }
     ApplyMotionPreset(scene, id, MotionPreset::kOrbit);
+    if (!entity->body.has_value() || !entity->trail.has_value()) continue;
     // Orbit the group centre rather than a point beside the sphere.
     BodyComponent& body = *entity->body;
     body.forces.central_point = center;

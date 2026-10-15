@@ -20,8 +20,10 @@ class RingBuffer {
       : storage_(std::max<std::size_t>(capacity, 1)),
         capacity_(std::max<std::size_t>(capacity, 1)) {}
 
-  void Push(const T& value) {
-    storage_[(head_ + size_) % capacity_] = value;
+  void Push(const T& value) { Push(T(value)); }
+
+  void Push(T&& value) {
+    storage_[(head_ + size_) % capacity_] = std::move(value);
     if (size_ < capacity_) {
       ++size_;
     } else {
@@ -41,8 +43,9 @@ class RingBuffer {
     std::vector<T> kept;
     const std::size_t keep = std::min(size_, capacity);
     kept.reserve(capacity);
-    for (std::size_t i = size_ - keep; i < size_; ++i)
+    for (std::size_t i = size_ - keep; i < size_; ++i) {
       kept.push_back((*this)[i]);
+    }
     kept.resize(capacity);
     storage_ = std::move(kept);
     capacity_ = capacity;

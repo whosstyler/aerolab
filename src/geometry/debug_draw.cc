@@ -33,8 +33,9 @@ void DebugDrawList::AddPolyline(std::span<const Vec3> points,
   for (std::size_t i = 0; i + 1 < points.size(); ++i) {
     AddLine(points[i], points[i + 1], color);
   }
-  if (closed && points.size() > 2)
+  if (closed && points.size() > 2) {
     AddLine(points.back(), points.front(), color);
+  }
 }
 
 void DebugDrawList::AddFadingPolyline(std::span<const Vec3> points,

@@ -155,7 +155,7 @@ void SimulationSystem::Step(Scene& scene, double dt) {
   ++step_count_;
 
   scene.ForEachEntity([this, dt](EntityId id, Entity& entity) {
-    if (entity.body.has_value()) StepBody(id, entity, dt);
+    if (entity.body.has_value()) StepBody(id, entity.name, *entity.body, dt);
   });
   for (EntityId root : scene.roots()) SyncBodyPoses(scene, root);
   AdvanceSpinners(scene, dt);
@@ -180,12 +180,14 @@ void SimulationSystem::Step(Scene& scene, double dt) {
                               : scene.WorldMatrix(id).TranslationPart());
       }
     }
-    if (sample_telemetry && entity.body.has_value()) RecordHistory(entity);
+    if (sample_telemetry && entity.body.has_value()) {
+      RecordHistory(*entity.body);
+    }
   });
 }
 
-void SimulationSystem::StepBody(EntityId id, Entity& entity, double dt) {
-  BodyComponent& body = *entity.body;
+void SimulationSystem::StepBody(EntityId id, const std::string& name,
+                                BodyComponent& body, double dt) {
   body.previous = body.state;
 
   if (body.motion == MotionType::kKinematic) {
@@ -208,22 +210,22 @@ void SimulationSystem::StepBody(EntityId id, Entity& entity, double dt) {
       body.diverged = true;
       PushEvent(SimulationEvent::Kind::kDivergence, id,
                 std::format("{}: numerical divergence with {}; body stopped",
-                            entity.name, sim::IntegratorName(body.integrator)));
+                            name, sim::IntegratorName(body.integrator)));
     }
   }
   if (body.forces.thrust != 0.0 && body.age < burn_end &&
       body.age + dt >= burn_end) {
     PushEvent(SimulationEvent::Kind::kBurnout, id,
-              std::format("{}: thrust burnout at {:.1f} m altitude",
-                          entity.name, body.state.position.y));
+              std::format("{}: thrust burnout at {:.1f} m altitude", name,
+                          body.state.position.y));
   }
-  ApplyGroundContact(id, entity);
+  ApplyGroundContact(id, name, body);
   body.age += dt;
   body.acceleration = CurrentAcceleration(body);
 }
 
-void SimulationSystem::ApplyGroundContact(EntityId id, Entity& entity) {
-  BodyComponent& body = *entity.body;
+void SimulationSystem::ApplyGroundContact(EntityId id, const std::string& name,
+                                          BodyComponent& body) {
   const double floor = body.collision_radius;
   if (!body.ground_contact || body.state.position.y >= floor) return;
   body.state.position.y = floor;
@@ -231,9 +233,9 @@ void SimulationSystem::ApplyGroundContact(EntityId id, Entity& entity) {
   if (normal_speed <= 0.0) return;
 
   if (normal_speed > kImpactReportSpeed) {
-    PushEvent(SimulationEvent::Kind::kImpact, id,
-              std::format("{}: ground impact at {:.1f} m/s", entity.name,
-                          normal_speed));
+    PushEvent(
+        SimulationEvent::Kind::kImpact, id,
+        std::format("{}: ground impact at {:.1f} m/s", name, normal_speed));
     body.state.angular_velocity *= kImpactSpinRetention;
   }
   const double bounce = normal_speed * body.restitution;
@@ -253,8 +255,7 @@ void SimulationSystem::ApplyGroundContact(EntityId id, Entity& entity) {
   }
 }
 
-void SimulationSystem::RecordHistory(Entity& entity) {
-  BodyComponent& body = *entity.body;
+void SimulationSystem::RecordHistory(BodyComponent& body) {
   TelemetrySample sample;
   sample.time = time_;
   sample.speed = Length(body.state.velocity);

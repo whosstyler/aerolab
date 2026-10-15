@@ -10,7 +10,9 @@ namespace {
 
 // Byte offset into the bound vertex buffer, in the form GL expects.
 const void* BufferOffset(std::size_t bytes) {
-  return reinterpret_cast<const void*>(static_cast<std::uintptr_t>(bytes));
+  // GL's vertex-attribute API encodes buffer offsets as pointers.
+  return reinterpret_cast<const void*>(  // NOLINT(performance-no-int-to-ptr)
+      static_cast<std::uintptr_t>(bytes));
 }
 
 GLsizeiptr ByteSize(std::size_t count, std::size_t element_size) {
