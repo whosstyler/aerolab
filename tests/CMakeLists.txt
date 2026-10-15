@@ -41,6 +41,7 @@ aerolab_add_test(geometry_test
 aerolab_add_test(sim_test
   SOURCES
     sim/flight_agent_test.cc
+    sim/flight_physics_test.cc
     sim/force_model_test.cc
     sim/integrator_test.cc
   DEPS aerolab_sim)

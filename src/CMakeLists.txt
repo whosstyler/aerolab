@@ -39,10 +39,14 @@ aerolab_add_library(aerolab_geometry
 
 aerolab_add_library(aerolab_sim
   SOURCES
+    sim/aerodynamics.cc
+    sim/atmosphere.cc
+    sim/fixed_wing.cc
     sim/flight_agent.cc
     sim/force_model.cc
     sim/integrator.cc
     sim/kinematic_path.cc
+    sim/multirotor.cc
     sim/rigid_body.cc
   DEPS aerolab_math)
 
