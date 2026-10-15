@@ -135,7 +135,9 @@ anywhere in the code base.
 * Inspector *Airframe* section: airspeed, air density, stall speed, angle
   of attack, sideslip, bank and pitch, throttle and thrust, surface
   deflections, rotor speeds and thrust-to-weight. Physical agents also
-  get a *Wind* setting in their autopilot settings.
+  get a *Wind* setting in their autopilot settings. In wind, wings plan
+  their turns for the faster downwind ground speed, so their legs run
+  faster over the ground than the cruise range.
 
 **Editor**
 * Docking layout: viewport centre, scene hierarchy left, inspector and

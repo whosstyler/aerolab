@@ -504,7 +504,9 @@ void DrawAutopilotSettings(EditorFrame& frame, EntityId id,
     if (agent.model == sim::FlightModel::kPhysical) {
       PropertyVec3("Wind", &body.forces.wind, 0.05f, "%.1f",
                    "Velocity of the air the airframe flies through, m/s. "
-                   "The autopilot holds its course by crabbing into it.");
+                   "Wings crab into it to hold their course (and plan turns "
+                   "for the faster downwind ground speed); hover craft lean "
+                   "into it.");
     }
     PropertyVec3("Area centre", &agent.area.center, 0.1f, "%.1f",
                  "Centre of the flight area (its height is ignored)");
@@ -527,8 +529,13 @@ void DrawAutopilotSettings(EditorFrame& frame, EntityId id,
     PropertyDouble("Max accel.", &agent.max_acceleration, 0.05f, 0.1, 100.0,
                    "%.1f m/s^2");
     double tilt = Degrees(agent.max_tilt);
-    if (PropertyDouble(wing ? "Max bank" : "Max tilt", &tilt, 0.2f, 1.0, 75.0,
-                       "%.0f deg")) {
+    const bool physical_wing =
+        wing && agent.model == sim::FlightModel::kPhysical;
+    if (PropertyDouble(
+            wing ? "Max bank" : "Max tilt", &tilt, 0.2f, 1.0, 75.0, "%.0f deg",
+            physical_wing ? "The autopilot banks at most 60 degrees, "
+                            "and less near the stall speed"
+                          : nullptr)) {
       agent.max_tilt = Radians(tilt);
     }
     PropertyDouble("Max climb", &agent.max_climb_rate, 0.05f, 0.1, 100.0,
