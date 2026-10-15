@@ -115,6 +115,24 @@ TEST(AutonomyTest, PhysicalForecastMatchesWhatTheAirframeThenDoes) {
   }
 }
 
+TEST(AutonomyTest, PhysicalWingLaunchesAtItsAirspeedInATailwind) {
+  Scene scene;
+  const EntityId plane = SpawnFlyer(scene, Archetype::kFixedWing,
+                                    MotionPreset::kAutoWing, {0, 20, 0});
+  BodyComponent& body = *scene.Get(plane)->body;
+  const Vec3 nose = Rotate(body.initial.orientation, -Vec3::UnitZ());
+  body.forces.wind = Vec3{nose.x, 0.0, nose.z} * 6.0;  // Straight behind.
+  SimulationSystem simulation(kStep);
+  simulation.Reset(scene);
+  // Without the wind it would launch at 12 m/s over the ground: only 6 m/s
+  // through the air, below its 7.6 m/s stall speed.
+  EXPECT_NEAR(Length(body.state.velocity - body.forces.wind),
+              body.agent.cruise_speed_min, 1e-9);
+  RunSteps(simulation, scene, 20 * 120);
+  EXPECT_EQ(body.halt, BodyHalt::kNone);
+  EXPECT_GT(body.state.position.y, body.agent.area.min_altitude - 6.0);
+}
+
 TEST(AutonomyTest, SimpleFlightModelStillFliesAndForecasts) {
   Scene scene;
   const EntityId quad = SpawnFlyer(scene, Archetype::kQuadrotor,

@@ -98,6 +98,14 @@ void ResetBody(BodyComponent& body) {
                             .acceleration = Vec3::Zero(),
                             .orientation = body.state.orientation};
     sim::FitToEnvelope(body.agent, launch);
+    if (body.agent.model == sim::FlightModel::kPhysical &&
+        body.agent.style == sim::FlightStyle::kWing &&
+        IsFinite(body.forces.wind)) {
+      // A real wing needs its speed through the air: launch at the fitted
+      // airspeed, carried along by the wind (a tailwind must not leave it
+      // below its stall speed).
+      launch.velocity += Vec3{body.forces.wind.x, 0.0, body.forces.wind.z};
+    }
     body.state.velocity = launch.velocity;
     body.state.orientation = launch.orientation;
     sim::ResetBrain(body.agent, launch, body.brain);
