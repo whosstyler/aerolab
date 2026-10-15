@@ -43,6 +43,7 @@ aerolab_add_library(aerolab_sim
     sim/atmosphere.cc
     sim/fixed_wing.cc
     sim/flight_agent.cc
+    sim/flight_control.cc
     sim/force_model.cc
     sim/integrator.cc
     sim/kinematic_path.cc
