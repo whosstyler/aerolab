@@ -121,12 +121,4 @@ void RenderTarget::Resolve() const {
   glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
-void RenderTarget::BlitToWindow(int window_width, int window_height) const {
-  glBindFramebuffer(GL_READ_FRAMEBUFFER, resolve_framebuffer_);
-  glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
-  glBlitFramebuffer(0, 0, width_, height_, 0, 0, window_width, window_height,
-                    GL_COLOR_BUFFER_BIT, GL_LINEAR);
-  glBindFramebuffer(GL_FRAMEBUFFER, 0);
-}
-
 }  // namespace aerolab

@@ -6,13 +6,16 @@
 
 namespace aerolab::sim {
 
+// Standard gravitational acceleration at the Earth's surface, m/s^2.
+inline constexpr double kStandardGravity = 9.81;
+
 // A configurable toy force model built from independent, optional terms.
 // Every term is a textbook idealization chosen for teaching; none models a
 // specific real vehicle. Units are SI.
 struct ForceModel {
   // Uniform gravitational acceleration.
   bool gravity_enabled = true;
-  Vec3 gravity{0.0, -9.81, 0.0};
+  Vec3 gravity{0.0, -kStandardGravity, 0.0};
 
   // Aerodynamic drag on the velocity relative to the air mass (`wind`):
   // F = -c1 v_rel - c2 |v_rel| v_rel.

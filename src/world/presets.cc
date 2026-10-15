@@ -19,8 +19,6 @@
 namespace aerolab {
 namespace {
 
-constexpr double kGravity = 9.81;
-
 // Approximate distance from the body origin to the ground when resting:
 // the smallest half-extent of the (scaled) mesh bounds.
 double CollisionRadius(const Entity& entity) {
@@ -166,7 +164,7 @@ void ApplyMotionPreset(Scene& scene, EntityId id, MotionPreset preset) {
       constexpr double kTrimSpeed = 16.0;
       // Lift equals weight at trim speed.
       f.lift_coefficient =
-          body.mass.mass * kGravity / (kTrimSpeed * kTrimSpeed);
+          body.mass.mass * sim::kStandardGravity / (kTrimSpeed * kTrimSpeed);
       f.quadratic_drag = 0.0045;
       f.weathervane = 0.03;
       f.angular_damping = 0.25;

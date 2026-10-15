@@ -64,10 +64,12 @@ class Mat4 {
                   const Vec3& scale);
 
   constexpr double operator()(int row, int col) const {
-    return elements_[static_cast<std::size_t>(col * 4 + row)];
+    return elements_[static_cast<std::size_t>(col) * 4 +
+                     static_cast<std::size_t>(row)];
   }
   constexpr double& operator()(int row, int col) {
-    return elements_[static_cast<std::size_t>(col * 4 + row)];
+    return elements_[static_cast<std::size_t>(col) * 4 +
+                     static_cast<std::size_t>(row)];
   }
 
   constexpr Vec4 Column(int col) const {

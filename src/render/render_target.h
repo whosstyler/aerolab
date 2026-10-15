@@ -28,12 +28,7 @@ class RenderTarget {
   // Resolves multisampled colour into color_texture().
   void Resolve() const;
 
-  // Copies the resolved image into the window's back buffer, scaled to the
-  // given size. Leaves framebuffer 0 bound.
-  void BlitToWindow(int window_width, int window_height) const;
-
   GLuint color_texture() const { return resolve_texture_; }
-  GLuint resolve_framebuffer() const { return resolve_framebuffer_; }
   int width() const { return width_; }
   int height() const { return height_; }
   int samples() const { return samples_; }

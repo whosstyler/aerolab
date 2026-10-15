@@ -44,10 +44,12 @@ class Mat3 {
   }
 
   constexpr double operator()(int row, int col) const {
-    return elements_[static_cast<std::size_t>(col * 3 + row)];
+    return elements_[static_cast<std::size_t>(col) * 3 +
+                     static_cast<std::size_t>(row)];
   }
   constexpr double& operator()(int row, int col) {
-    return elements_[static_cast<std::size_t>(col * 3 + row)];
+    return elements_[static_cast<std::size_t>(col) * 3 +
+                     static_cast<std::size_t>(row)];
   }
 
   constexpr Vec3 Column(int col) const {

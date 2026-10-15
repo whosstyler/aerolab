@@ -41,7 +41,7 @@ class Renderer {
               const DebugDrawList& overlay_lines,
               const RenderSettings& settings);
 
-  // Local-space bounds of a built-in mesh (used for picking and gizmos).
+  // Local-space bounds of a built-in mesh as uploaded (used for shadows).
   const Aabb& MeshBounds(MeshKind kind) const;
 
   const RenderStats& stats() const { return stats_; }

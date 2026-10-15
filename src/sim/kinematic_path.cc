@@ -5,14 +5,9 @@
 #include <string_view>
 
 #include "math/scalar.h"
+#include "sim/force_model.h"
 
 namespace aerolab::sim {
-namespace {
-
-constexpr double kStandardGravity = 9.81;
-
-}  // namespace
-
 std::string_view PathShapeName(PathShape shape) {
   switch (shape) {
     case PathShape::kCircle:
