@@ -83,6 +83,44 @@ TEST(SimulationTest, TrailSamplesAtItsInterval) {
               1.0);
 }
 
+TEST(SimulationTest, RelaunchUsesStoredLaunchPoseNotCurrentPosition) {
+  Scene scene;
+  const EntityId id = SpawnBallistic(scene);
+  const Vec3 launch = scene.Get(id)->body->initial.position;
+  SimulationSystem simulation(0.01);
+  for (int i = 0; i < 200; ++i) simulation.Update(scene, 0.01);
+  ASSERT_GT(Distance(scene.Get(id)->body->state.position, launch), 5.0);
+  RelaunchFromInitialPose(scene, id);
+  EXPECT_VEC3_NEAR(scene.Get(id)->body->initial.position, launch, 1e-12);
+  EXPECT_VEC3_NEAR(scene.Get(id)->body->state.position, launch, 1e-12);
+}
+
+TEST(SimulationTest, RunawayBodyIsStoppedBeforeItOverflows) {
+  Scene scene;
+  const EntityId id = Spawn(scene, Archetype::kSphere, {0, 20, 0});
+  ApplyMotionPreset(scene, id, MotionPreset::kOscillator);
+  BodyComponent& body = *scene.Get(id)->body;
+  // A very stiff spring with explicit Euler grows without bound.
+  body.forces.spring_stiffness = 5e4;
+  body.integrator = sim::Integrator::kExplicitEuler;
+  PrepareBody(scene, id);
+  SimulationSystem simulation(0.01);
+  bool stopped = false;
+  for (int i = 0; i < 2000 && !stopped; ++i) {
+    simulation.Update(scene, 0.01);
+    for (const SimulationEvent& event : simulation.TakeEvents()) {
+      stopped |= event.kind == SimulationEvent::Kind::kOutOfBounds;
+    }
+  }
+  // Still finite, so it is reported as leaving the bounds, not as NaN.
+  ASSERT_TRUE(stopped);
+  EXPECT_EQ(scene.Get(id)->body->halt, BodyHalt::kOutOfBounds);
+  const Vec3 frozen = scene.Get(id)->body->state.position;
+  for (int i = 0; i < 10; ++i) simulation.Update(scene, 0.01);
+  EXPECT_EQ(scene.Get(id)->body->state.position, frozen);  // Stays stopped.
+  EXPECT_LT(MaxComponent(Abs(frozen)), 1e6);
+}
+
 TEST(SimulationTest, KinematicPrepareRecentersThePath) {
   Scene scene;
   const EntityId id = Spawn(scene, Archetype::kFixedWing, {10, 20, 0});
@@ -130,7 +168,7 @@ TEST(SimulationTest, PendingEventsAreCapped) {
             SimulationSystem::kMaxPendingEvents);
 }
 
-TEST(SimulationTest, ChildBodiesFollowParentsWithinTheSameStep) {
+TEST(SimulationTest, ChildBodyPosesAgreeWithSimulation) {
   Scene scene;
   const EntityId parent = Spawn(scene, Archetype::kSphere, {0, 20, 0});
   ApplyMotionPreset(scene, parent, MotionPreset::kOscillator);
@@ -236,15 +274,11 @@ TEST(SimulationTest, DivergingBodyIsStoppedNotPoisoned) {
   body.initial.angular_velocity = {3.0, -7.0, 11.0};
   PrepareBody(scene, id);
   SimulationSystem simulation(0.01);
-  bool diverged = false;
-  for (int i = 0; i < 5000 && !diverged; ++i) {
+  for (int i = 0; i < 5000; ++i) {
     simulation.Update(scene, 0.01);
-    for (const SimulationEvent& event : simulation.TakeEvents()) {
-      diverged =
-          diverged || event.message.find("divergence") != std::string::npos;
-    }
+    if (scene.Get(id)->body->halt != BodyHalt::kNone) break;
   }
-  EXPECT_TRUE(diverged);
+  EXPECT_NE(scene.Get(id)->body->halt, BodyHalt::kNone);
   const sim::RigidBodyState& state = scene.Get(id)->body->state;
   EXPECT_TRUE(IsFinite(state.position));
   EXPECT_TRUE(IsFinite(state.angular_velocity));
@@ -274,14 +308,14 @@ TEST(SimulationTest, RenderMatrixInterpolatesBetweenSteps) {
   const Vec3 mid = RenderWorldMatrix(scene, id, 0.5).TranslationPart();
   EXPECT_VEC3_NEAR(mid, Lerp(body.previous.position, body.state.position, 0.5),
                    1e-12);
-  // Children of a body follow its interpolated pose.
+  const Quat mid_orientation =
+      Slerp(body.previous.orientation, body.state.orientation, 0.5);
+  // Children of a body follow its interpolated pose. (Create may reallocate
+  // entity storage, so `body` must not be used after this point.)
   const EntityId child = scene.Create("Marker", id);
   scene.Get(child)->local.position = {0, 1, 0};
   EXPECT_VEC3_NEAR(RenderWorldMatrix(scene, child, 0.5).TranslationPart(),
-                   mid + Rotate(Slerp(body.previous.orientation,
-                                      body.state.orientation, 0.5),
-                                Vec3::UnitY()),
-                   1e-9);
+                   mid + Rotate(mid_orientation, Vec3::UnitY()), 1e-9);
 }
 
 TEST(SimulationTest, BodyUnderAMovedParentStaysInWorldSpace) {

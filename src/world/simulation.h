@@ -17,8 +17,8 @@ namespace aerolab {
 
 // Something noteworthy that happened during a simulation step.
 struct SimulationEvent {
-  enum class Kind { kInfo, kBurnout, kImpact, kDivergence };
-  Kind kind = Kind::kInfo;
+  enum class Kind { kBurnout, kImpact, kDivergence, kOutOfBounds };
+  Kind kind = Kind::kBurnout;
   double time = 0.0;  // Simulation time, s.
   EntityId entity;
   std::string message;
@@ -102,12 +102,18 @@ class SimulationSystem {
 // Uses the entity's current world pose as the body's launch pose (keeping
 // the launch velocities already set in `body.initial`) and resets the body
 // to it. Kinematic bodies have their path re-centred so it starts there.
-// Call after configuring a body or editing its initial conditions.
+// Call when configuring a body that has not been simulated yet; once it has
+// moved, use RelaunchFromInitialPose.
 void PrepareBody(Scene& scene, EntityId id);
 
 // Moves a body's launch pose and resets the body to it.
 void SetLaunchPose(Scene& scene, EntityId id, const Vec3& position,
                    const Quat& orientation);
+
+// Relaunches a body from its stored launch conditions (`body.initial`),
+// regardless of where the simulation has moved it. Use after editing
+// launch velocities, motion type or path parameters.
+void RelaunchFromInitialPose(Scene& scene, EntityId id);
 
 // World matrix used for rendering: bodies are drawn at a pose interpolated
 // between their last two simulation states, spinning parts at their

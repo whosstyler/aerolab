@@ -36,8 +36,15 @@ const char* GlString(GLenum name) {
 }
 
 LogLevel SimulationEventLevel(SimulationEvent::Kind kind) {
-  return kind == SimulationEvent::Kind::kDivergence ? LogLevel::kWarning
-                                                    : LogLevel::kInfo;
+  switch (kind) {
+    case SimulationEvent::Kind::kDivergence:
+    case SimulationEvent::Kind::kOutOfBounds:
+      return LogLevel::kWarning;
+    case SimulationEvent::Kind::kBurnout:
+    case SimulationEvent::Kind::kImpact:
+      return LogLevel::kInfo;
+  }
+  return LogLevel::kInfo;
 }
 
 }  // namespace

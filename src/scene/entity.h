@@ -65,6 +65,13 @@ enum class MotionType {
 };
 
 // One sample of a body's flight data, recorded at a fixed rate.
+// Why a dynamic body was frozen. A frozen body stays put until reset.
+enum class BodyHalt {
+  kNone,
+  kDiverged,     // The integrator produced a non-finite state.
+  kOutOfBounds,  // Position or speed passed the simulation bounds.
+};
+
 struct TelemetrySample {
   double time = 0.0;          // Simulation time, s.
   double speed = 0.0;         // m/s
@@ -102,8 +109,8 @@ struct BodyComponent {
   // to a stop at about mu * g regardless of the time step.
   double ground_friction = 0.5;
 
-  // Set when the integrator blew up; cleared by a reset.
-  bool diverged = false;
+  // Why the simulation stopped this body, if it did; cleared by a reset.
+  BodyHalt halt = BodyHalt::kNone;
 
   // Flight history for plots; sampled at a fixed simulated rate.
   RingBuffer<TelemetrySample> telemetry{1200};

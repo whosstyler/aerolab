@@ -27,7 +27,6 @@ namespace aerolab::editor {
 namespace {
 
 constexpr ImGuiTreeNodeFlags kOpen = ImGuiTreeNodeFlags_DefaultOpen;
-constexpr double kStandardGravity = 9.81;
 
 std::string Format3(const Vec3& v, const char* unit) {
   return std::format("{:.2f}, {:.2f}, {:.2f} {}", v.x, v.y, v.z, unit);
@@ -92,7 +91,7 @@ void DrawLiveState(const BodyComponent& body) {
     PropertyText(
         "Acceleration",
         std::format("{:.2f} m/s^2  ({:.2f} g)", Length(body.acceleration),
-                    Length(body.acceleration) / kStandardGravity));
+                    Length(body.acceleration) / sim::kStandardGravity));
     PropertyText("Accel vector", Format3(body.acceleration, "m/s^2"));
     PropertyText("Angular vel.",
                  Format3(s.angular_velocity * (180.0 / kPi), "deg/s"));
@@ -112,10 +111,14 @@ void DrawLiveState(const BodyComponent& body) {
     }
     EndProperties();
   }
-  if (body.diverged) {
+  if (body.halt == BodyHalt::kDiverged) {
     ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(theme::kWarning),
                        "Integrator diverged; the body was stopped. "
                        "Try RK4 or a smaller fixed step, then reset.");
+  } else if (body.halt == BodyHalt::kOutOfBounds) {
+    ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(theme::kWarning),
+                       "The body left the simulation bounds and was "
+                       "stopped. Reduce thrust or enable drag, then reset.");
   }
 }
 
@@ -129,7 +132,7 @@ void DrawSimulationSettings(EditorFrame& frame, EntityId id,
     int motion = body.motion == MotionType::kKinematic ? 1 : 0;
     if (ImGui::Combo("##motion", &motion, "Dynamic\0Kinematic path\0")) {
       body.motion = motion == 1 ? MotionType::kKinematic : MotionType::kDynamic;
-      PrepareBody(*frame.scene, id);
+      RelaunchFromInitialPose(*frame.scene, id);
     }
     if (body.motion == MotionType::kDynamic) {
       PropertyLabel("Integrator", "Numerical method for this body");
@@ -180,10 +183,7 @@ void DrawLaunchConditions(EditorFrame& frame, EntityId id,
   if (pose_changed) {
     SetLaunchPose(*frame.scene, id, position, orientation);
   } else if (relaunch) {
-    // Keep the edited launch pose: PrepareBody reads the entity's pose.
-    frame.scene->SetWorldPose(id, body.initial.position,
-                              body.initial.orientation);
-    PrepareBody(*frame.scene, id);
+    RelaunchFromInitialPose(*frame.scene, id);
   }
 }
 
@@ -275,11 +275,7 @@ void DrawPath(EditorFrame& frame, EntityId id, BodyComponent& body) {
     EndProperties();
   }
   // Keep the path passing through the launch point.
-  if (changed) {
-    frame.scene->SetWorldPose(id, body.initial.position,
-                              body.initial.orientation);
-    PrepareBody(*frame.scene, id);
-  }
+  if (changed) RelaunchFromInitialPose(*frame.scene, id);
 }
 
 void DrawGround(BodyComponent& body) {

@@ -39,6 +39,17 @@ bool IsFiniteState(const sim::RigidBodyState& s) {
          std::isfinite(q.x) && std::isfinite(q.y) && std::isfinite(q.z);
 }
 
+// Beyond these magnitudes a toy body has certainly blown up, even while
+// still finite; catching it here keeps single-precision rendering sane.
+constexpr double kRunawayPosition = 1e6;  // m
+constexpr double kRunawaySpeed = 1e5;     // m/s and rad/s
+
+bool IsRunaway(const sim::RigidBodyState& s) {
+  return MaxComponent(Abs(s.position)) > kRunawayPosition ||
+         MaxComponent(Abs(s.velocity)) > kRunawaySpeed ||
+         MaxComponent(Abs(s.angular_velocity)) > kRunawaySpeed;
+}
+
 // State of a kinematic body at `age`, with angular velocity estimated from
 // the orientation change since `previous`.
 sim::RigidBodyState KinematicState(const BodyComponent& body, double age,
@@ -71,7 +82,7 @@ void ResetBody(BodyComponent& body) {
                    ? KinematicState(body, 0.0, body.initial, 0.0)
                    : body.initial;
   body.previous = body.state;
-  body.diverged = false;
+  body.halt = BodyHalt::kNone;
   body.telemetry.Clear();
   body.acceleration = CurrentAcceleration(body);
 }
@@ -197,17 +208,29 @@ void SimulationSystem::StepBody(EntityId id, const std::string& name,
     return;
   }
 
+  // A halted body stays where it stopped until the next reset.
+  if (body.halt != BodyHalt::kNone) {
+    body.age += dt;
+    return;
+  }
   const double burn_end = body.forces.thrust_duration;
   body.state = sim::Step(body.state, body.mass, body.forces, body.age, dt,
                          body.integrator);
-  if (!IsFiniteState(body.state)) {
-    // An unstable integrator blew up. Freeze the body at its last finite
-    // state rather than spreading NaNs through rendering and the UI.
+  const bool finite = IsFiniteState(body.state);
+  if (!finite || IsRunaway(body.state)) {
+    // Freeze the body at its last good state rather than spreading NaNs
+    // or float overflow through rendering and the UI.
     body.state = body.previous;
     body.state.velocity = Vec3::Zero();
     body.state.angular_velocity = Vec3::Zero();
-    if (!body.diverged) {
-      body.diverged = true;
+    if (finite) {
+      body.halt = BodyHalt::kOutOfBounds;
+      PushEvent(SimulationEvent::Kind::kOutOfBounds, id,
+                std::format("{}: left the simulation bounds (|x| > {:g} m or "
+                            "speed > {:g}); body stopped",
+                            name, kRunawayPosition, kRunawaySpeed));
+    } else {
+      body.halt = BodyHalt::kDiverged;
       PushEvent(SimulationEvent::Kind::kDivergence, id,
                 std::format("{}: numerical divergence with {}; body stopped",
                             name, sim::IntegratorName(body.integrator)));
@@ -286,6 +309,15 @@ void SetLaunchPose(Scene& scene, EntityId id, const Vec3& position,
   if (!scene.IsAlive(id)) return;
   scene.SetWorldPose(id, position, orientation);
   PrepareBody(scene, id);
+}
+
+void RelaunchFromInitialPose(Scene& scene, EntityId id) {
+  const Entity* entity = scene.Get(id);
+  if (entity == nullptr || !entity->body.has_value()) return;
+  // PrepareBody reads the entity's current pose, which the simulation has
+  // moved; put it back at the launch pose first.
+  SetLaunchPose(scene, id, entity->body->initial.position,
+                entity->body->initial.orientation);
 }
 
 Mat4 RenderWorldMatrix(const Scene& scene, EntityId id, double alpha) {
