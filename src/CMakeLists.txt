@@ -39,6 +39,18 @@ aerolab_add_library(aerolab_camera
     camera/camera_controller.cc
   DEPS aerolab_math aerolab_core)
 
+aerolab_add_library(aerolab_scene
+  SOURCES
+    scene/scene.cc
+  DEPS aerolab_math aerolab_core aerolab_geometry)
+
+aerolab_add_library(aerolab_world
+  SOURCES
+    world/animation.cc
+    world/picking.cc
+    world/spawner.cc
+  DEPS aerolab_scene aerolab_geometry aerolab_math)
+
 # Command-line parsing has no platform dependencies, so it is always built
 # and unit tested, even in test-only configurations.
 aerolab_add_library(aerolab_app_options
@@ -60,13 +72,19 @@ if(AEROLAB_BUILD_APP)
   add_executable(aerolab
     app/main.cc
     app/application.cc
+    app/scene_presenter.cc
     app/screenshot.cc
+    app/sdl_input.cc
     app/sdl_window.cc)
   target_include_directories(aerolab PRIVATE ${PROJECT_SOURCE_DIR}/src)
   target_link_libraries(aerolab PRIVATE
     aerolab_app_options
+    aerolab_camera
     aerolab_core
+    aerolab_geometry
     aerolab_render
+    aerolab_scene
+    aerolab_world
     SDL3::SDL3
     aerolab_options)
   aerolab_configure_executable(aerolab)

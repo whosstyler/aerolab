@@ -1,19 +1,37 @@
 #include "app/application.h"
 
 #include <SDL3/SDL_events.h>
+#include <SDL3/SDL_mouse.h>
 #include <SDL3/SDL_video.h>
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <vector>
 
+#include "app/scene_presenter.h"
 #include "app/screenshot.h"
+#include "app/sdl_input.h"
+#include "core/input.h"
 #include "core/log.h"
+#include "math/aabb.h"
+#include "math/mat4.h"
+#include "math/projection.h"
+#include "math/quat.h"
+#include "math/ray.h"
+#include "math/vec3.h"
 #include "render/gl.h"
 #include "render/readback.h"
+#include "scene/entity.h"
+#include "world/animation.h"
+#include "world/picking.h"
+#include "world/spawner.h"
 
 namespace aerolab {
 namespace {
+
+// A left press that moves less than this (in pixels) counts as a click.
+constexpr double kClickSlop = 4.0;
 
 GlProc LoadGlProc(const char* name) { return SDL_GL_GetProcAddress(name); }
 
@@ -51,7 +69,23 @@ bool Application::Initialize() {
   }
   LogInfo("OpenGL {} | {} | {}", GlString(GL_VERSION), GlString(GL_RENDERER),
           GlString(GL_VENDOR));
+
+  renderer_ = Renderer::Create();
+  if (renderer_ == nullptr) return false;
+
+  BuildDefaultScene();
   return true;
+}
+
+void Application::BuildDefaultScene() {
+  Spawn(scene_, Archetype::kCube, {-6.0, 0.5, 0.0});
+  Spawn(scene_, Archetype::kSphere, {-3.5, 0.5, 0.0});
+  Spawn(scene_, Archetype::kDart, {3.0, 2.5, 0.0},
+        FromEuler({.yaw = 0.6, .pitch = 0.35, .roll = 0.0}));
+  Spawn(scene_, Archetype::kFixedWing, {0.0, 5.0, -6.0},
+        FromEuler({.yaw = -0.4, .pitch = 0.0, .roll = 0.3}));
+  Spawn(scene_, Archetype::kQuadrotor, {-3.0, 3.0, -3.0});
+  camera_rig_.LookAt({12.0, 6.0, 14.0}, {-0.5, 2.0, -2.0});
 }
 
 int Application::Run() {
@@ -72,24 +106,130 @@ int Application::Run() {
 }
 
 void Application::ProcessEvents() {
+  input_.BeginFrame();
+  const float density = SDL_GetWindowPixelDensity(window_->handle());
   SDL_Event event;
   while (SDL_PollEvent(&event)) {
     if (event.type == SDL_EVENT_QUIT ||
         event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED) {
       running_ = false;
     }
+    ApplySdlEvent(event, density, input_);
   }
 }
 
 void Application::RunFrame(double frame_dt) {
-  elapsed_seconds_ += frame_dt;
+  HandleShortcuts();
+  UpdateCamera(frame_dt);
+  AdvanceSpinners(scene_, frame_dt);
+  UpdatePicking();
   Render();
 }
 
+void Application::HandleShortcuts() {
+  if (input_.WasPressed(Key::k1)) camera_rig_.SetMode(CameraMode::kFreeFly);
+  if (input_.WasPressed(Key::k2)) camera_rig_.SetMode(CameraMode::kOrbit);
+  if (input_.WasPressed(Key::k3)) camera_rig_.SetMode(CameraMode::kFollow);
+  if (input_.WasPressed(Key::kEscape)) selection_.selected = kNoEntity;
+  if (input_.WasPressed(Key::kF)) {
+    if (const std::optional<Aabb> bounds =
+            scene_.WorldBounds(selection_.selected)) {
+      camera_rig_.Focus(Center(*bounds), BoundingRadius(*bounds));
+    }
+  }
+  if (input_.WasPressed(Key::kDelete) && scene_.IsAlive(selection_.selected)) {
+    const int removed = scene_.Destroy(selection_.selected);
+    LogInfo("Removed {} entit{}", removed, removed == 1 ? "y" : "ies");
+    selection_.selected = kNoEntity;
+  }
+}
+
+void Application::UpdateCamera(double frame_dt) {
+  // Capture the pointer while rotating so the view can spin indefinitely.
+  const bool rotating = input_.IsDown(MouseButton::kRight);
+  if (rotating != mouse_captured_ &&
+      SDL_SetWindowRelativeMouseMode(window_->handle(), rotating)) {
+    mouse_captured_ = rotating;
+  }
+
+  const CameraInput camera_input =
+      CameraInputFromState(input_, /*use_mouse=*/true, /*use_keyboard=*/true,
+                           static_cast<double>(window_->pixel_height()),
+                           SDL_GetWindowPixelDensity(window_->handle()));
+  std::optional<Vec3> follow_target;
+  if (const std::optional<Aabb> bounds =
+          scene_.WorldBounds(selection_.selected)) {
+    follow_target = Center(*bounds);
+  }
+  camera_rig_.Update(camera_input, frame_dt, follow_target);
+}
+
+void Application::UpdatePicking() {
+  const int width = window_->pixel_width();
+  const int height = window_->pixel_height();
+  // A press that starts while the view is being rotated, or outside the
+  // window, is never part of a selection click.
+  if (input_.WasPressed(MouseButton::kLeft)) {
+    click_armed_ = !mouse_captured_ && input_.mouse_inside();
+  }
+  const bool clicked =
+      click_armed_ && input_.WasClicked(MouseButton::kLeft, kClickSlop);
+  if (!input_.IsDown(MouseButton::kLeft)) click_armed_ = false;
+
+  if (width <= 0 || height <= 0 || mouse_captured_ || !input_.mouse_inside()) {
+    selection_.hovered = kNoEntity;
+    return;
+  }
+  const RenderView view = MakeRenderView(width, height);
+  const std::optional<Mat4> inverse = Inverse(view.projection * view.view);
+  if (!inverse.has_value()) return;
+  const ScreenRect rect{0.0, 0.0, static_cast<double>(width),
+                        static_cast<double>(height)};
+  const Ray ray = ScreenToWorldRay(*inverse, input_.mouse_position(), rect);
+  const std::optional<PickHit> hit = PickEntity(scene_, ray);
+  selection_.hovered = hit.has_value() ? hit->entity : kNoEntity;
+
+  if (clicked) {
+    selection_.selected = selection_.hovered;
+    if (const Entity* entity = scene_.Get(selection_.selected)) {
+      LogInfo("Selected '{}'", entity->name);
+    }
+  }
+}
+
+RenderView Application::MakeRenderView(int width, int height) const {
+  const Camera& camera = camera_rig_.camera();
+  RenderView view;
+  view.width = width;
+  view.height = height;
+  view.view = ViewMatrix(camera);
+  view.projection = ProjectionMatrix(
+      camera, static_cast<double>(width) / static_cast<double>(height));
+  view.camera_position = camera.position;
+  view.near_plane = camera.near_plane;
+  view.far_plane = camera.far_plane;
+  return view;
+}
+
 void Application::Render() {
-  glViewport(0, 0, window_->pixel_width(), window_->pixel_height());
-  glClearColor(0.42f, 0.55f, 0.70f, 1.0f);
-  glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+  const int width = window_->pixel_width();
+  const int height = window_->pixel_height();
+  if (width <= 0 || height <= 0) return;  // Minimized.
+  if (!viewport_target_.Resize(width, height, render_settings_.msaa_samples)) {
+    return;
+  }
+
+  render_items_ = BuildRenderItems(scene_, selection_);
+  world_lines_.Clear();
+  overlay_lines_.Clear();
+  world_lines_.AddAxes(Mat4::Identity(), 2.0);
+  AddSelectionOverlay(scene_, selection_, overlay_lines_);
+
+  viewport_target_.BindForDrawing();
+  renderer_->Render(MakeRenderView(width, height), render_items_, world_lines_,
+                    overlay_lines_, render_settings_);
+  viewport_target_.Resolve();
+  viewport_target_.BlitToWindow(width, height);
 }
 
 bool Application::SaveScreenshot() {
