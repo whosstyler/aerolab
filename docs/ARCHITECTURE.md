@@ -33,13 +33,13 @@ guidance, targeting, or interception logic anywhere in the code base.
                    +----------+-----------+          |
                               v                      |
                    +----------------------+          |
-                   |        world         |<---------+
-                   +----------+-----------+
-                              |        +-----------+
-                              |        |  render   |<-- math, geometry (GL)
-                              v        +-----+-----+
-                   +----------------------+  |
-                   |   editor (ImGui)     |<-+
+                   |        world         |          |
+                   +----------+-----------+          |
+                              |        +-----------+ |
+                              |        |  render   | |  render <- math,
+                              v        +-----+-----+ |  core, geometry (GL)
+                   +----------------------+  |       |
+                   |   editor (ImGui)     |<-+-------+
                    +----------+-----------+
                               v
                    +----------------------+
@@ -55,7 +55,7 @@ guidance, targeting, or interception logic anywhere in the code base.
 | `aerolab_sim`      | math                           | no              | no                 |
 | `aerolab_camera`   | math, core                     | no              | no                 |
 | `aerolab_scene`    | math, core, geometry, sim      | no              | no                 |
-| `aerolab_world`    | scene, sim, geometry, camera, core | no          | no                 |
+| `aerolab_world`    | scene, sim, geometry, core     | no              | no                 |
 | `aerolab_render`   | math, core, geometry           | **yes**         | no                 |
 | `aerolab_editor`   | everything above + ImGui       | via render API  | **yes**            |
 | `aerolab` (app)    | everything + SDL3              | via render API  | backends only      |
@@ -101,11 +101,13 @@ OpenGL declarations in `render/gl.h` keep the C API spelling (`glDrawArrays`,
 ```
 Application::Run() per frame
   1. ProcessEvents     SDL events -> ImGui backend + InputState
-  2. UpdateCamera      CameraRig with real (unscaled) frame time; mouse only
-                       over the viewport, keyboard only when no text field
-                       is active (state reported by last frame's UI)
-  3. UpdateSimulation  SimulationSystem::Update -> 0..N fixed steps;
+  2. UpdateSimulation  SimulationSystem::Update -> 0..N fixed steps;
                        events -> EventLog (stamped with sim time)
+  3. UpdateCamera      CameraRig with real (unscaled) frame time; mouse only
+                       over the viewport, keyboard only when no text field
+                       is active (state reported by last frame's UI). Runs
+                       after the simulation so follow mode tracks the pose
+                       drawn this frame
   4. RenderScene       ScenePresenter -> RenderItems, debug visualizer ->
                        DebugDrawList, Renderer -> MSAA RenderTarget,
                        resolve (GPU-timed)
@@ -157,10 +159,12 @@ allowed to snowball). Each body keeps its previous and current state;
 parts blend their angle the same way. Picking, focus and the follow camera
 use the same interpolated pose as the drawn image.
 
-**Bodies in a hierarchy.** Rigid bodies are integrated in world space. After
-all bodies step, their poses are written back to the scene parents-first
-with `Scene::SetWorldPose`, so a body attached to another body follows its
-parent correctly.
+**Bodies in a hierarchy.** Rigid bodies are integrated in world space and
+are independent of one another: a body parented under another body keeps
+its own world-space motion. After all bodies step, their poses are written
+back to the scene parents-first with `Scene::SetWorldPose`, so the scene
+graph agrees with the simulation, and non-body descendants (rotors,
+markers) follow their parent's pose.
 
 **Scene storage.** Entities live in a slot array addressed by generational
 `EntityId`s; a handle to a destroyed entity never aliases a newer one.
@@ -180,8 +184,9 @@ simulation and camera changes go through their public APIs.
 **Numerics worth knowing.** See README "Physics notes": measured
 convergence orders, RK4's second-order orientation, and why the
 "symplectic" label of semi-implicit Euler does not cover gyroscopic
-rotation. Divergence is detected per body and stops the body instead of
-spreading NaNs.
+rotation. Divergence (a non-finite state) and runaway states past the
+simulation bounds are detected per body; the body is frozen (`BodyHalt`)
+until the next reset instead of spreading NaNs or float overflow.
 
 ## Status
 

@@ -72,13 +72,19 @@ cmake --build --preset release
 ./build/release/bin/aerolab
 ```
 
-Run the tests (unit tests, a module-boundary check and a GPU smoke test):
+Run the tests (unit tests, a module-boundary check and GPU smoke tests):
 
 ```sh
 cmake --preset debug && cmake --build --preset debug
 ctest --preset debug              # add -LE gpu on machines without a GPU
 cmake --preset ubsan && cmake --build --preset ubsan && ctest --preset ubsan
+cmake --preset asan && cmake --build --preset asan && ctest --preset asan
 ```
+
+`asan` builds the app and tests with AddressSanitizer + UBSan (the smoke
+tests then run the editor with a selection under the sanitizers). With
+llvm-mingw the ASan runtime DLL ships in the toolchain's `bin` directory,
+which must be on `PATH`.
 
 `tests-only` builds just the libraries and tests, without SDL or a GPU.
 
@@ -116,7 +122,12 @@ hierarchy's **+ Add** button; drag entities in the hierarchy to re-parent.
 ## Architecture
 
 ```
-math -> core, geometry, sim, camera -> scene -> world -> render/editor -> app
+math  ->  core, geometry, sim, camera      (foundations)
+          scene    <- math, core, geometry, sim
+          world    <- scene, sim, geometry, core
+          render   <- math, core, geometry   (never sees scene or sim)
+          editor   <- world, scene, camera, render, ImGui
+          app      <- everything + SDL3
 ```
 
 Each directory under `src/` is an independent static library. The physics
@@ -153,6 +164,10 @@ coordinate conventions, frame anatomy and design notes.
   bounded; explicit Euler gains energy; RK4 drifts very slowly. These
   guarantees apply to translation: on a fast asymmetric tumble with a coarse
   step, semi-implicit Euler can diverge, which the engine detects and stops.
+* **Simulation bounds.** A body that produces a non-finite state, or passes
+  1e6 m from the origin or 1e5 m/s (or rad/s), is frozen and stays put until
+  the next reset, with an event explaining which limit it hit. This keeps
+  single-precision rendering and the UI sane.
 * **Toy models.** Drag, lift and the weathervane torque are textbook
   idealizations for teaching, not aerodynamic models of any real vehicle.
 
