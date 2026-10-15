@@ -37,13 +37,20 @@
       "displayName": "Tests with UndefinedBehaviorSanitizer",
       "inherits": "tests-only",
       "cacheVariables": { "AEROLAB_SANITIZE": "undefined" }
+    },
+    {
+      "name": "asan",
+      "displayName": "Debug app and tests with AddressSanitizer + UBSan",
+      "inherits": "debug",
+      "cacheVariables": { "AEROLAB_SANITIZE": "address,undefined" }
     }
   ],
   "buildPresets": [
     { "name": "debug", "configurePreset": "debug" },
     { "name": "release", "configurePreset": "release" },
     { "name": "tests-only", "configurePreset": "tests-only" },
-    { "name": "ubsan", "configurePreset": "ubsan" }
+    { "name": "ubsan", "configurePreset": "ubsan" },
+    { "name": "asan", "configurePreset": "asan" }
   ],
   "testPresets": [
     {
@@ -64,6 +71,11 @@
     {
       "name": "ubsan",
       "configurePreset": "ubsan",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "asan",
+      "configurePreset": "asan",
       "output": { "outputOnFailure": true }
     }
   ]

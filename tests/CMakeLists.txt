@@ -94,4 +94,12 @@ if(AEROLAB_BUILD_APP)
   # headless and exit cleanly. Needs a GPU; exclude with `ctest -LE gpu`.
   add_test(NAME app_smoke COMMAND aerolab --hidden --no-vsync --frames 10)
   set_tests_properties(app_smoke PROPERTIES LABELS gpu TIMEOUT 60)
+  # Exercises the selection-dependent editor paths (inspector body sections,
+  # telemetry plots, follow camera).
+  add_test(NAME app_smoke_selection
+           COMMAND aerolab --hidden --no-vsync --frames 90 --select Glider)
+  set_tests_properties(app_smoke_selection PROPERTIES
+    LABELS gpu TIMEOUT 60
+    # Fail if the demo object was renamed and nothing got selected.
+    FAIL_REGULAR_EXPRESSION "no object named")
 endif()
