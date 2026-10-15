@@ -9,6 +9,15 @@ function(aerolab_add_library name)
   target_link_libraries(${name} PUBLIC ${ARG_DEPS} PRIVATE aerolab_options)
 endfunction()
 
+aerolab_add_library(aerolab_math
+  SOURCES
+    math/mat3.cc
+    math/mat4.cc
+    math/quat.cc
+    math/transform.cc
+    math/projection.cc
+    math/intersection.cc)
+
 aerolab_add_library(aerolab_core
   SOURCES
     core/clock.cc
@@ -25,7 +34,7 @@ if(AEROLAB_BUILD_APP)
     SOURCES
       render/gl.cc
       render/readback.cc
-    DEPS aerolab_core)
+    DEPS aerolab_math aerolab_core)
 
   add_executable(aerolab
     app/main.cc

@@ -12,6 +12,16 @@ function(aerolab_add_test name)
   gtest_discover_tests(${name} DISCOVERY_TIMEOUT 30)
 endfunction()
 
+aerolab_add_test(math_test
+  SOURCES
+    math/vec_test.cc
+    math/mat_test.cc
+    math/quat_test.cc
+    math/transform_test.cc
+    math/projection_test.cc
+    math/intersection_test.cc
+  DEPS aerolab_math)
+
 aerolab_add_test(core_test
   SOURCES
     core/clock_test.cc
