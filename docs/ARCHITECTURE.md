@@ -50,7 +50,7 @@ guidance, targeting, or interception logic anywhere in the code base.
 | Library            | Depends on                     | Knows about GL? | Knows about ImGui? |
 |--------------------|--------------------------------|-----------------|--------------------|
 | `aerolab_math`     | -                              | no              | no                 |
-| `aerolab_core`     | -                              | no              | no                 |
+| `aerolab_core`     | math                           | no              | no                 |
 | `aerolab_geometry` | math                           | no              | no                 |
 | `aerolab_sim`      | math                           | no              | no                 |
 | `aerolab_camera`   | math, core                     | no              | no                 |

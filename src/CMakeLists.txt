@@ -21,7 +21,9 @@ aerolab_add_library(aerolab_math
 aerolab_add_library(aerolab_core
   SOURCES
     core/clock.cc
-    core/log.cc)
+    core/input.cc
+    core/log.cc
+  DEPS aerolab_math)
 
 aerolab_add_library(aerolab_geometry
   SOURCES
@@ -30,6 +32,12 @@ aerolab_add_library(aerolab_geometry
     geometry/mesh_library.cc
     geometry/primitives.cc
   DEPS aerolab_math)
+
+aerolab_add_library(aerolab_camera
+  SOURCES
+    camera/camera.cc
+    camera/camera_controller.cc
+  DEPS aerolab_math aerolab_core)
 
 # Command-line parsing has no platform dependencies, so it is always built
 # and unit tested, even in test-only configurations.

@@ -11,7 +11,7 @@ endif()
 
 # module -> first-party modules it may include (itself is always allowed).
 set(allowed_math "")
-set(allowed_core "")
+set(allowed_core "math")
 set(allowed_geometry "math")
 set(allowed_sim "math")
 set(allowed_camera "math;core")
