@@ -99,15 +99,25 @@ OpenGL declarations in `render/gl.h` keep the C API spelling (`glDrawArrays`,
 ## Frame anatomy
 
 ```
-Application::RunFrame()
-  1. Pump SDL events -> ImGui backend + InputState
-  2. Update camera rig with real (unscaled) frame time
-  3. SimulationSystem::Update(frame_dt)  -> 0..N fixed steps (accumulator)
-  4. Build RenderItems + DebugDrawList from the scene (interpolated poses)
-  5. Render the 3D scene into the viewport framebuffer (MSAA, resolved)
-  6. Build editor UI (viewport panel shows the framebuffer texture)
-  7. Render ImGui draw data, swap buffers
+Application::Run() per frame
+  1. ProcessEvents     SDL events -> ImGui backend + InputState
+  2. UpdateCamera      CameraRig with real (unscaled) frame time; mouse only
+                       over the viewport, keyboard only when no text field
+                       is active (state reported by last frame's UI)
+  3. UpdateSimulation  SimulationSystem::Update -> 0..N fixed steps;
+                       events -> EventLog (stamped with sim time)
+  4. RenderScene       ScenePresenter -> RenderItems, debug visualizer ->
+                       DebugDrawList, Renderer -> MSAA RenderTarget,
+                       resolve (GPU-timed)
+  5. RenderUi          Editor::Draw (viewport panel shows the resolved
+                       texture, does picking and overlays with the same
+                       camera), ImGui -> default framebuffer
+  6. SwapBuffers
 ```
+
+The viewport size the UI asks for is applied on the next frame. Overlays,
+picking and the 3D image are all built from the same camera state within a
+frame, so labels never lag the geometry.
 
 Simulation uses the "fix your timestep" pattern: the frame time (scaled by the
 user's time scale) is accumulated and consumed in fixed `dt` steps. Rendering
@@ -137,3 +147,44 @@ Each stage leaves the application runnable.
 9. Object inspection, simulation controls, telemetry plots, integrator
    comparison tooling.
 10. Rendering polish, GPU/CPU profiling, tests, documentation.
+
+## Design notes
+
+**Fixed step and interpolation.** `FixedTimestep` turns variable frame time
+into whole steps (capped per frame; the backlog is dropped rather than
+allowed to snowball). Each body keeps its previous and current state;
+`RenderWorldMatrix` blends them with the accumulator fraction, and spinning
+parts blend their angle the same way. Picking, focus and the follow camera
+use the same interpolated pose as the drawn image.
+
+**Bodies in a hierarchy.** Rigid bodies are integrated in world space. After
+all bodies step, their poses are written back to the scene parents-first
+with `Scene::SetWorldPose`, so a body attached to another body follows its
+parent correctly.
+
+**Scene storage.** Entities live in a slot array addressed by generational
+`EntityId`s; a handle to a destroyed entity never aliases a newer one.
+Components are `std::optional` members of `Entity` (render, spin, body,
+trail) - a deliberately simple alternative to a full ECS.
+
+**Renderer contract.** The renderer draws whatever framebuffer is bound
+from three flat inputs: `RenderView`, a span of `RenderItem`s and two
+`DebugDrawList`s (depth-tested and overlay). It establishes and restores a
+known GL state, so ImGui can share the context.
+
+**Editor contract.** `Editor::Draw(EditorFrame&)` receives non-owning
+pointers to the application state for one frame and returns
+`EditorRequests` (quit, vsync). The editor owns only UI state; all scene,
+simulation and camera changes go through their public APIs.
+
+**Numerics worth knowing.** See README "Physics notes": measured
+convergence orders, RK4's second-order orientation, and why the
+"symplectic" label of semi-implicit Euler does not cover gyroscopic
+rotation. Divergence is detected per body and stops the body instead of
+spreading NaNs.
+
+## Status
+
+All ten stages are implemented. Each stage is a separate commit (or a
+library commit followed by an integration commit) on the feature branch,
+reviewed before commit; see `git log` for details.
