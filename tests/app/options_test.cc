@@ -53,6 +53,12 @@ TEST(OptionsTest, ScreenshotNeedsPathAndFrameLimit) {
   EXPECT_FALSE(no_frames.error.empty());
 }
 
+TEST(OptionsTest, SelectNeedsAName) {
+  EXPECT_EQ(Parse({"--select", "Glider"}).options.select_name, "Glider");
+  EXPECT_EQ(Parse({"--select"}).status, ParseStatus::kError);
+  EXPECT_EQ(Parse({"--select", ""}).status, ParseStatus::kError);
+}
+
 TEST(OptionsTest, RejectsUnknownOptions) {
   const ParseResult result = Parse({"--fly-fast"});
   EXPECT_EQ(result.status, ParseStatus::kError);

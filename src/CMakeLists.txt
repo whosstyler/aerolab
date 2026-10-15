@@ -21,9 +21,12 @@ aerolab_add_library(aerolab_math
 aerolab_add_library(aerolab_core
   SOURCES
     core/clock.cc
+    core/event_log.cc
     core/fixed_timestep.cc
+    core/frame_stats.cc
     core/input.cc
     core/log.cc
+    core/string_util.cc
   DEPS aerolab_math)
 
 aerolab_add_library(aerolab_geometry
@@ -74,6 +77,7 @@ if(AEROLAB_BUILD_APP)
     SOURCES
       render/gl.cc
       render/gpu_mesh.cc
+      render/gpu_timer.cc
       render/readback.cc
       render/render_target.cc
       render/renderer.cc
@@ -81,9 +85,37 @@ if(AEROLAB_BUILD_APP)
       render/shader_sources.cc
     DEPS aerolab_math aerolab_core aerolab_geometry)
 
+  # The editor UI font is compiled into the binary (no runtime assets).
+  include(AerolabEmbedFile)
+  set(ui_font_source ${CMAKE_CURRENT_BINARY_DIR}/generated/ui_font_data.cc)
+  aerolab_embed_file(
+    INPUT ${AEROLAB_UI_FONT}
+    OUTPUT ${ui_font_source}
+    NAMESPACE aerolab::editor
+    SYMBOL kUiFontData)
+
+  aerolab_add_library(aerolab_editor
+    SOURCES
+      editor/actions.cc
+      editor/editor.cc
+      editor/hierarchy_panel.cc
+      editor/inspector_panel.cc
+      editor/log_panel.cc
+      editor/performance_panel.cc
+      editor/settings_panel.cc
+      editor/telemetry_panel.cc
+      editor/theme.cc
+      editor/ui_font.cc
+      editor/viewport_panel.cc
+      editor/widgets.cc
+      ${ui_font_source}
+    DEPS aerolab_world aerolab_scene aerolab_camera aerolab_render
+         aerolab_core aerolab_math imgui)
+
   add_executable(aerolab
     app/main.cc
     app/application.cc
+    app/imgui_layer.cc
     app/scene_presenter.cc
     app/screenshot.cc
     app/sdl_input.cc
@@ -93,6 +125,7 @@ if(AEROLAB_BUILD_APP)
     aerolab_app_options
     aerolab_camera
     aerolab_core
+    aerolab_editor
     aerolab_geometry
     aerolab_render
     aerolab_scene

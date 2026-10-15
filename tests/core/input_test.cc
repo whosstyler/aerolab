@@ -35,10 +35,10 @@ TEST(InputStateTest, TapWithinOneFrameIsStillSeen) {
 TEST(InputStateTest, RepeatedDownDoesNotRetrigger) {
   InputState input;
   input.BeginFrame();
-  input.SetKey(Key::kSpace, true);
+  input.SetKey(Key::kE, true);
   input.BeginFrame();
-  input.SetKey(Key::kSpace, true);
-  EXPECT_FALSE(input.WasPressed(Key::kSpace));
+  input.SetKey(Key::kE, true);
+  EXPECT_FALSE(input.WasPressed(Key::kE));
 }
 
 TEST(InputStateTest, MouseDeltaAndWheelAccumulatePerFrame) {

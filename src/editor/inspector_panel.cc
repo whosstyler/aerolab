@@ -1,0 +1,431 @@
+// Inspector: transform (in world, parent and camera space), live dynamics,
+// launch conditions and every configurable physical parameter of the
+// selected entity.
+
+#include <algorithm>
+#include <array>
+#include <cmath>
+#include <format>
+#include <string>
+
+#include "camera/camera.h"
+#include "editor/panels.h"
+#include "editor/theme.h"
+#include "editor/widgets.h"
+#include "imgui.h"
+#include "math/quat.h"
+#include "math/scalar.h"
+#include "math/transform.h"
+#include "sim/force_model.h"
+#include "sim/integrator.h"
+#include "sim/kinematic_path.h"
+#include "sim/rigid_body.h"
+#include "world/presets.h"
+#include "world/simulation.h"
+
+namespace aerolab::editor {
+namespace {
+
+constexpr ImGuiTreeNodeFlags kOpen = ImGuiTreeNodeFlags_DefaultOpen;
+constexpr double kStandardGravity = 9.81;
+
+std::string Format3(const Vec3& v, const char* unit) {
+  return std::format("{:.2f}, {:.2f}, {:.2f} {}", v.x, v.y, v.z, unit);
+}
+
+void DrawHeader(EditorFrame& frame, EntityId id, Entity& entity) {
+  std::array<char, 128> name{};
+  entity.name.copy(name.data(), name.size() - 1);
+  ImGui::SetNextItemWidth(-1.0f);
+  if (ImGui::InputText("##name", name.data(), name.size())) {
+    entity.name = name.data();
+  }
+  const Entity* parent = frame.scene->Get(entity.parent);
+  ImGui::TextDisabled("id %u.%u   parent: %s", id.index, id.generation,
+                      parent != nullptr ? parent->name.c_str() : "(world)");
+  if (ImGui::Button("Focus")) FocusSelection(frame);
+  ImGui::SameLine();
+  if (ImGui::Button("Delete")) DeleteSelection(frame);
+}
+
+void DrawTransform(EditorFrame& frame, EntityId id, Entity& entity) {
+  if (!ImGui::CollapsingHeader("Transform", kOpen)) return;
+  const Scene& scene = *frame.scene;
+  const Transform world = scene.WorldTransform(id);
+  if (BeginProperties("##transform")) {
+    if (entity.body.has_value()) {
+      PropertyText("Driven by", "simulation",
+                   "Edit the launch conditions below to move it");
+    } else {
+      PropertyVec3("Position", &entity.local.position, 0.05f, "%.2f",
+                   "Local position, relative to the parent");
+      PropertyRotation("Rotation", &entity.local.rotation);
+    }
+    Vec3 scale = entity.local.scale;
+    if (PropertyVec3("Scale", &scale, 0.01f, "%.2f")) {
+      entity.local.scale = Max(scale, Vec3{1e-3, 1e-3, 1e-3});
+    }
+    // The same point expressed in each coordinate space.
+    PropertyVec3ReadOnly("World", world.position, "m",
+                         "Position in world space (Y up, ground at y = 0)");
+    PropertyVec3ReadOnly("Parent-local", entity.local.position, "m",
+                         "Position relative to the parent's frame");
+    PropertyVec3ReadOnly(
+        "Camera space",
+        WorldToCameraSpace(frame.camera->camera(), world.position), "m",
+        "Position relative to the camera (camera looks down -Z)");
+    const EulerAngles e = ToEuler(world.rotation);
+    PropertyText(
+        "World attitude",
+        std::format("yaw {:.1f}  pitch {:.1f}  roll {:.1f} deg", Degrees(e.yaw),
+                    Degrees(e.pitch), Degrees(e.roll)));
+    EndProperties();
+  }
+}
+
+void DrawLiveState(const BodyComponent& body) {
+  if (!ImGui::CollapsingHeader("Live state", kOpen)) return;
+  const sim::RigidBodyState& s = body.state;
+  if (BeginProperties("##live")) {
+    PropertyText("Speed", std::format("{:.2f} m/s", Length(s.velocity)));
+    PropertyText("Velocity", Format3(s.velocity, "m/s"));
+    PropertyText(
+        "Acceleration",
+        std::format("{:.2f} m/s^2  ({:.2f} g)", Length(body.acceleration),
+                    Length(body.acceleration) / kStandardGravity));
+    PropertyText("Accel vector", Format3(body.acceleration, "m/s^2"));
+    PropertyText("Angular vel.",
+                 Format3(s.angular_velocity * (180.0 / kPi), "deg/s"));
+    PropertyText("Altitude", std::format("{:.2f} m", s.position.y));
+    PropertyText("Age", std::format("{:.2f} s", body.age));
+    if (body.motion == MotionType::kDynamic) {
+      const double kinetic = sim::KineticEnergy(s, body.mass);
+      const double potential = sim::PotentialEnergy(s, body.mass, body.forces);
+      PropertyText("Kinetic energy", std::format("{:.1f} J", kinetic));
+      PropertyText("Potential energy", std::format("{:.1f} J", potential),
+                   "Gravity, spring and central-body terms");
+      PropertyText("Total energy",
+                   std::format("{:.1f} J", kinetic + potential));
+      PropertyText("|Angular mom.|",
+                   std::format("{:.3f} kg m^2/s",
+                               Length(sim::AngularMomentum(s, body.mass))));
+    }
+    EndProperties();
+  }
+  if (body.diverged) {
+    ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(theme::kWarning),
+                       "Integrator diverged; the body was stopped. "
+                       "Try RK4 or a smaller fixed step, then reset.");
+  }
+}
+
+void DrawSimulationSettings(EditorFrame& frame, EntityId id,
+                            BodyComponent& body) {
+  if (!ImGui::CollapsingHeader("Simulation", kOpen)) return;
+  if (BeginProperties("##simulation")) {
+    PropertyLabel("Motion",
+                  "Dynamic bodies integrate forces; kinematic "
+                  "bodies follow a closed-form path");
+    int motion = body.motion == MotionType::kKinematic ? 1 : 0;
+    if (ImGui::Combo("##motion", &motion, "Dynamic\0Kinematic path\0")) {
+      body.motion = motion == 1 ? MotionType::kKinematic : MotionType::kDynamic;
+      PrepareBody(*frame.scene, id);
+    }
+    if (body.motion == MotionType::kDynamic) {
+      PropertyLabel("Integrator", "Numerical method for this body");
+      const std::string current(sim::IntegratorName(body.integrator));
+      if (ImGui::BeginCombo("##integrator", current.c_str())) {
+        for (sim::Integrator integrator : sim::AllIntegrators()) {
+          const std::string name(sim::IntegratorName(integrator));
+          if (ImGui::Selectable(name.c_str(), integrator == body.integrator)) {
+            body.integrator = integrator;
+          }
+        }
+        ImGui::EndCombo();
+      }
+    }
+    EndProperties();
+  }
+}
+
+void DrawLaunchConditions(EditorFrame& frame, EntityId id,
+                          BodyComponent& body) {
+  if (!ImGui::CollapsingHeader("Launch conditions", kOpen)) return;
+  HelpText(
+      "Initial state restored by Reset. Moving the launch pose relaunches "
+      "the object live; velocity edits relaunch it when you release.");
+  bool relaunch = false;
+  bool pose_changed = false;
+  Vec3 position = body.initial.position;
+  Quat orientation = body.initial.orientation;
+  if (BeginProperties("##launch")) {
+    pose_changed |= PropertyVec3("Position", &position, 0.05f, "%.2f");
+    pose_changed |= PropertyRotation("Orientation", &orientation);
+    if (body.motion == MotionType::kDynamic) {
+      // Velocities update the stored launch state while dragging, and the
+      // body is relaunched once the edit is released.
+      PropertyVec3("Velocity", &body.initial.velocity, 0.05f, "%.2f",
+                   "World-frame launch velocity, m/s");
+      relaunch |= ImGui::IsItemDeactivatedAfterEdit();
+      Vec3 spin_deg = body.initial.angular_velocity * (180.0 / kPi);
+      if (PropertyVec3("Angular vel.", &spin_deg, 0.5f, "%.1f",
+                       "World-frame angular velocity, deg/s")) {
+        body.initial.angular_velocity = spin_deg * (kPi / 180.0);
+      }
+      relaunch |= ImGui::IsItemDeactivatedAfterEdit();
+    }
+    EndProperties();
+  }
+  if (ImGui::Button("Relaunch now")) relaunch = true;
+  if (pose_changed) {
+    SetLaunchPose(*frame.scene, id, position, orientation);
+  } else if (relaunch) {
+    // Keep the edited launch pose: PrepareBody reads the entity's pose.
+    frame.scene->SetWorldPose(id, body.initial.position,
+                              body.initial.orientation);
+    PrepareBody(*frame.scene, id);
+  }
+}
+
+void DrawMass(EditorFrame& frame, EntityId id, BodyComponent& body) {
+  if (!ImGui::CollapsingHeader("Mass and inertia")) return;
+  if (BeginProperties("##mass")) {
+    PropertyDouble("Mass", &body.mass.mass, 0.05f, 0.01, 1e5, "%.2f kg");
+    Vec3 inertia = body.mass.principal_inertia;
+    if (PropertyVec3("Principal I", &inertia, 0.005f, "%.3f",
+                     "Moments of inertia about body X, Y, Z (kg m^2)")) {
+      body.mass.principal_inertia = Max(inertia, Vec3{1e-5, 1e-5, 1e-5});
+    }
+    EndProperties();
+  }
+  if (ImGui::Button("Box inertia from scale")) {
+    const Vec3 size = Abs(frame.scene->Get(id)->local.scale);
+    body.mass = sim::BoxMassProperties(body.mass.mass, size);
+  }
+}
+
+void DrawForces(sim::ForceModel& f) {
+  if (!ImGui::CollapsingHeader("Forces and torques")) return;
+  if (BeginProperties("##forces")) {
+    PropertyBool("Gravity", &f.gravity_enabled);
+    if (f.gravity_enabled) PropertyVec3("  g", &f.gravity, 0.05f, "%.2f");
+    PropertyDouble("Linear drag", &f.linear_drag, 0.005f, 0.0, 100.0,
+                   "%.3f N/(m/s)");
+    PropertyDouble("Quadratic drag", &f.quadratic_drag, 0.0005f, 0.0, 10.0,
+                   "%.4f N/(m/s)^2");
+    PropertyVec3("Wind", &f.wind, 0.05f, "%.2f",
+                 "Air velocity; drag acts on velocity relative to it");
+    PropertyDouble("Thrust", &f.thrust, 0.5f, 0.0, 1e5, "%.1f N",
+                   "Constant force along body forward (-Z)");
+    PropertyDouble("Burn time", &f.thrust_duration, 0.05f, 0.0, 1e4, "%.2f s");
+    PropertyDouble("Lift coeff.", &f.lift_coefficient, 0.001f, 0.0, 10.0,
+                   "%.4f N/(m/s)^2", "Lift = c * forward_airspeed^2 (body up)");
+    PropertyBool("Spring", &f.spring_enabled);
+    if (f.spring_enabled) {
+      PropertyVec3("  Anchor", &f.spring_anchor, 0.05f, "%.2f");
+      PropertyDouble("  Stiffness", &f.spring_stiffness, 0.05f, 0.0, 1e5,
+                     "%.2f N/m");
+      PropertyDouble("  Damping", &f.spring_damping, 0.01f, 0.0, 1e4,
+                     "%.2f N/(m/s)");
+    }
+    PropertyBool("Central body", &f.central_enabled,
+                 "Inverse-square attraction toward a point");
+    if (f.central_enabled) {
+      PropertyVec3("  Centre", &f.central_point, 0.05f, "%.2f");
+      PropertyDouble("  mu", &f.central_mu, 1.0f, 0.0, 1e9, "%.1f m^3/s^2");
+      PropertyDouble("  Softening", &f.central_softening, 0.005f, 0.0, 10.0,
+                     "%.3f m");
+    }
+    PropertyDouble("Weathervane", &f.weathervane, 0.001f, 0.0, 10.0, "%.4f",
+                   "Torque turning the nose into the direction of travel");
+    PropertyDouble("Angular damping", &f.angular_damping, 0.01f, 0.0, 1e4,
+                   "%.3f N m s");
+    PropertyVec3("Body torque", &f.body_torque, 0.01f, "%.3f",
+                 "Constant torque in body axes (N m)");
+    EndProperties();
+  }
+}
+
+void DrawPath(EditorFrame& frame, EntityId id, BodyComponent& body) {
+  if (!ImGui::CollapsingHeader("Kinematic path", kOpen)) return;
+  sim::KinematicPath& path = body.path;
+  bool changed = false;
+  if (BeginProperties("##path")) {
+    PropertyLabel("Shape");
+    const std::string current(sim::PathShapeName(path.shape));
+    if (ImGui::BeginCombo("##shape", current.c_str())) {
+      for (sim::PathShape shape : sim::AllPathShapes()) {
+        const std::string name(sim::PathShapeName(shape));
+        if (ImGui::Selectable(name.c_str(), shape == path.shape)) {
+          path.shape = shape;
+          changed = true;
+        }
+      }
+      ImGui::EndCombo();
+    }
+    changed |=
+        PropertyDouble("Radius", &path.radius, 0.1f, 0.5, 1000.0, "%.1f m");
+    changed |=
+        PropertyDouble("Period", &path.period, 0.05f, 0.5, 600.0, "%.2f s");
+    if (path.shape == sim::PathShape::kHelix) {
+      changed |= PropertyDouble("Climb rate", &path.climb_rate, 0.01f, -50.0,
+                                50.0, "%.2f m/s");
+    }
+    changed |= PropertyBool("Clockwise", &path.clockwise);
+    EndProperties();
+  }
+  // Keep the path passing through the launch point.
+  if (changed) {
+    frame.scene->SetWorldPose(id, body.initial.position,
+                              body.initial.orientation);
+    PrepareBody(*frame.scene, id);
+  }
+}
+
+void DrawGround(BodyComponent& body) {
+  if (!ImGui::CollapsingHeader("Ground contact")) return;
+  if (BeginProperties("##ground")) {
+    PropertyBool("Enabled", &body.ground_contact);
+    PropertyDouble("Contact radius", &body.collision_radius, 0.01f, 0.01, 100.0,
+                   "%.2f m",
+                   "Distance from origin to the ground "
+                   "when resting");
+    PropertyDouble("Restitution", &body.restitution, 0.01f, 0.0, 1.0, "%.2f",
+                   "Fraction of normal speed kept on bounce");
+    PropertyDouble("Friction (mu)", &body.ground_friction, 0.01f, 0.0, 2.0,
+                   "%.2f", "Coulomb friction coefficient");
+    EndProperties();
+  }
+}
+
+void DrawTrail(TrailComponent& trail) {
+  if (!ImGui::CollapsingHeader("Trail")) return;
+  if (BeginProperties("##trail")) {
+    PropertyBool("Enabled", &trail.enabled);
+    PropertyColor("Colour", &trail.color);
+    PropertyDouble("Interval", &trail.sample_interval, 0.005f, 0.005, 5.0,
+                   "%.3f s", "Simulated time between trail points");
+    // Resizing reallocates the buffer, so the dragged value is kept in
+    // widget storage and applied when the drag ends.
+    const ImGuiID key = ImGui::GetID("##max_points_pending");
+    ImGuiStorage* storage = ImGui::GetStateStorage();
+    double length = storage->GetBool(key, false)
+                        ? storage->GetFloat(key + 1)
+                        : static_cast<double>(trail.points.capacity());
+    PropertyDouble("Max points", &length, 5.0f, 2.0, 20000.0, "%.0f");
+    storage->SetBool(key, ImGui::IsItemActive());
+    storage->SetFloat(key + 1, static_cast<float>(length));
+    if (ImGui::IsItemDeactivatedAfterEdit()) {
+      trail.points.SetCapacity(static_cast<std::size_t>(length));
+    }
+    EndProperties();
+  }
+  if (ImGui::Button("Clear trail")) trail.points.Clear();
+}
+
+void DrawMaterial(Entity& entity) {
+  if (!entity.render.has_value() || !ImGui::CollapsingHeader("Appearance")) {
+    return;
+  }
+  RenderComponent& render = *entity.render;
+  if (BeginProperties("##material")) {
+    PropertyText("Mesh", MeshKindName(render.mesh));
+    PropertyBool("Visible", &render.visible);
+    PropertyBool("Casts shadow", &render.cast_shadow);
+    PropertyColor("Base colour", &render.material.base_color);
+    double specular = render.material.specular;
+    if (PropertyDouble("Specular", &specular, 0.01f, 0.0, 1.0, "%.2f")) {
+      render.material.specular = static_cast<float>(specular);
+    }
+    double shininess = render.material.shininess;
+    if (PropertyDouble("Shininess", &shininess, 0.5f, 1.0, 512.0, "%.0f")) {
+      render.material.shininess = static_cast<float>(shininess);
+    }
+    double emissive = render.material.emissive;
+    if (PropertyDouble("Emissive", &emissive, 0.01f, 0.0, 1.0, "%.2f")) {
+      render.material.emissive = static_cast<float>(emissive);
+    }
+    EndProperties();
+  }
+}
+
+void DrawAddBody(EditorFrame& frame, EntityId id) {
+  if (!ImGui::CollapsingHeader("Simulation", kOpen)) return;
+  HelpText("This object is static. Give it a motion preset to simulate it.");
+  const float right_edge =
+      ImGui::GetCursorScreenPos().x + ImGui::GetContentRegionAvail().x;
+  for (MotionPreset preset : AllMotionPresets()) {
+    const std::string name(MotionPresetName(preset));
+    if (ImGui::Button(name.c_str())) {
+      ApplyMotionPreset(*frame.scene, id, preset);
+    }
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) {
+      const std::string description(MotionPresetDescription(preset));
+      ImGui::SetTooltip("%s", description.c_str());
+    }
+    // Flow buttons across the panel width.
+    const float next = ImGui::GetItemRectMax().x +
+                       ImGui::GetStyle().ItemSpacing.x + 110.0f * Dpi();
+    if (next < right_edge) {
+      ImGui::SameLine();
+    }
+  }
+  ImGui::NewLine();
+}
+
+}  // namespace
+
+void DrawInspectorPanel(EditorFrame& frame) {
+  if (!ImGui::Begin(kInspectorWindow)) {
+    ImGui::End();
+    return;
+  }
+  const EntityId id = frame.selection->selected;
+  Entity* entity = frame.scene->Get(id);
+  if (entity == nullptr) {
+    HelpText(
+        "Select an object in the viewport or the hierarchy to inspect "
+        "its transform, motion and physical parameters.");
+    ImGui::End();
+    return;
+  }
+
+  DrawHeader(frame, id, *entity);
+  // The header may have deleted the entity.
+  entity = frame.scene->Get(id);
+  if (entity == nullptr) {
+    ImGui::End();
+    return;
+  }
+  ImGui::Separator();
+  DrawTransform(frame, id, *entity);
+  if (entity->body.has_value()) {
+    BodyComponent& body = *entity->body;
+    DrawLiveState(body);
+    DrawSimulationSettings(frame, id, body);
+    DrawLaunchConditions(frame, id, body);
+    if (body.motion == MotionType::kKinematic) {
+      DrawPath(frame, id, body);
+    } else {
+      DrawMass(frame, id, body);
+      DrawForces(body.forces);
+      DrawGround(body);
+    }
+  } else {
+    DrawAddBody(frame, id);
+  }
+  if (entity->trail.has_value()) DrawTrail(*entity->trail);
+  if (entity->spin.has_value() && ImGui::CollapsingHeader("Spin")) {
+    if (BeginProperties("##spin")) {
+      double rpm = entity->spin->rate * 60.0 / kTwoPi;
+      if (PropertyDouble("Rate", &rpm, 5.0f, -20000.0, 20000.0, "%.0f rpm")) {
+        entity->spin->rate = rpm * kTwoPi / 60.0;
+      }
+      EndProperties();
+    }
+  }
+  DrawMaterial(*entity);
+  ImGui::End();
+}
+
+}  // namespace aerolab::editor

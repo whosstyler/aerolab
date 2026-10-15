@@ -25,9 +25,11 @@ aerolab_add_test(math_test
 aerolab_add_test(core_test
   SOURCES
     core/clock_test.cc
+    core/event_log_test.cc
     core/fixed_timestep_test.cc
     core/input_test.cc
     core/log_test.cc
+    core/string_util_test.cc
   DEPS aerolab_core)
 
 aerolab_add_test(geometry_test
@@ -69,6 +71,12 @@ aerolab_add_test(scene_presenter_test
     app/scene_presenter_test.cc
     ${PROJECT_SOURCE_DIR}/src/app/scene_presenter.cc
   DEPS aerolab_scene aerolab_world aerolab_geometry)
+
+# Header-only, GL-free rendering helpers.
+aerolab_add_test(render_layout_test
+  SOURCES
+    render/axis_gizmo_test.cc
+  DEPS aerolab_math)
 
 # Architectural guard: modules may only include what they depend on.
 add_test(NAME module_dependencies

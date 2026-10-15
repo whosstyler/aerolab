@@ -35,8 +35,13 @@ bool RenderTarget::Resize(int width, int height, int samples) {
   glGetIntegerv(GL_MAX_SAMPLES, &max_samples);
   samples = std::clamp(samples, 0, std::max(max_samples, 0));
   if (samples == 1) samples = 0;
-  if (width == width_ && height == height_ && samples == samples_) return true;
+  // Compare against the last *request*, so an MSAA level the driver
+  // rejected (and that fell back to 0) is not retried every frame.
+  if (width == width_ && height == height_ && samples == requested_samples_) {
+    return true;
+  }
   if (draw_framebuffer_ == 0) CreateObjects();
+  requested_samples_ = samples;
 
   if (Allocate(width, height, samples)) return true;
   // Some drivers reject particular MSAA formats; fall back to no MSAA.
@@ -48,7 +53,7 @@ bool RenderTarget::Resize(int width, int height, int samples) {
   // Forget the cached size so the next call retries instead of reusing an
   // incomplete framebuffer.
   width_ = height_ = 0;
-  samples_ = -1;
+  samples_ = requested_samples_ = -1;
   return false;
 }
 

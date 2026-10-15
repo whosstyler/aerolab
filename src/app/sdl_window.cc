@@ -4,6 +4,7 @@
 #include <SDL3/SDL_init.h>
 #include <SDL3/SDL_video.h>
 
+#include <algorithm>
 #include <memory>
 
 #include "core/log.h"
@@ -46,8 +47,28 @@ std::unique_ptr<SdlWindow> SdlWindow::Create(const WindowConfig& config) {
       SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY;
   if (config.hidden) flags |= SDL_WINDOW_HIDDEN;
 
-  SDL_Window* window = SDL_CreateWindow(config.title.c_str(), config.width,
-                                        config.height, flags);
+  // Interpret the requested size in display-independent units: scale it by
+  // the monitor's content scale (e.g. 2x on a 200% display) but keep it
+  // inside the usable desktop area.
+  int width = config.width;
+  int height = config.height;
+  const SDL_DisplayID display = SDL_GetPrimaryDisplay();
+  const float content_scale = SDL_GetDisplayContentScale(display);
+  if (content_scale > 0.0f) {
+    width = static_cast<int>(static_cast<float>(width) * content_scale);
+    height = static_cast<int>(static_cast<float>(height) * content_scale);
+  }
+  SDL_Rect usable;
+  if (SDL_GetDisplayUsableBounds(display, &usable) && usable.w > 0 &&
+      usable.h > 0) {
+    width = std::min(width, usable.w * 9 / 10);
+    height = std::min(height, usable.h * 9 / 10);
+  }
+  LogInfo("Display content scale {:.2f}; window {}x{}", content_scale, width,
+          height);
+
+  SDL_Window* window =
+      SDL_CreateWindow(config.title.c_str(), width, height, flags);
   if (window == nullptr) {
     LogError("SDL_CreateWindow failed: {}", SDL_GetError());
     return nullptr;

@@ -14,6 +14,9 @@ struct AppOptions {
   std::string screenshot_path;
   bool vsync = true;
   bool hidden_window = false;
+  // Name of a root object to select (and focus) at startup; for demos and
+  // automated screenshots.
+  std::string select_name;
 };
 
 enum class ParseStatus { kRun, kHelp, kError };

@@ -8,8 +8,9 @@
 
 namespace aerolab {
 
-// Keys the engine reacts to. The platform layer translates its own key codes
-// into these, so nothing outside the platform layer depends on SDL.
+// Keys the engine itself reacts to (camera navigation). The platform layer
+// translates its own key codes into these, so nothing outside the platform
+// layer depends on SDL. Editor shortcuts go through the UI toolkit instead.
 enum class Key {
   kW,
   kA,
@@ -17,18 +18,8 @@ enum class Key {
   kD,
   kQ,
   kE,
-  kF,
-  kR,
-  kSpace,
-  kPeriod,
-  kDelete,
-  kEscape,
   kShift,
   kCtrl,
-  kAlt,
-  k1,
-  k2,
-  k3,
   kCount,
 };
 

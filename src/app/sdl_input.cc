@@ -24,33 +24,12 @@ Key KeyFromScancode(SDL_Scancode scancode) {
       return Key::kQ;
     case SDL_SCANCODE_E:
       return Key::kE;
-    case SDL_SCANCODE_F:
-      return Key::kF;
-    case SDL_SCANCODE_R:
-      return Key::kR;
-    case SDL_SCANCODE_SPACE:
-      return Key::kSpace;
-    case SDL_SCANCODE_PERIOD:
-      return Key::kPeriod;
-    case SDL_SCANCODE_DELETE:
-      return Key::kDelete;
-    case SDL_SCANCODE_ESCAPE:
-      return Key::kEscape;
     case SDL_SCANCODE_LSHIFT:
     case SDL_SCANCODE_RSHIFT:
       return Key::kShift;
     case SDL_SCANCODE_LCTRL:
     case SDL_SCANCODE_RCTRL:
       return Key::kCtrl;
-    case SDL_SCANCODE_LALT:
-    case SDL_SCANCODE_RALT:
-      return Key::kAlt;
-    case SDL_SCANCODE_1:
-      return Key::k1;
-    case SDL_SCANCODE_2:
-      return Key::k2;
-    case SDL_SCANCODE_3:
-      return Key::k3;
     default:
       return Key::kCount;
   }

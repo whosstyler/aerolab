@@ -32,12 +32,11 @@ TEST(SdlInputTest, KeysMapByScancode) {
 TEST(SdlInputTest, KeyRepeatDoesNotRetrigger) {
   InputState input;
   input.BeginFrame();
-  ApplySdlEvent(KeyEvent(SDL_SCANCODE_SPACE, true), 1.0f, input);
+  ApplySdlEvent(KeyEvent(SDL_SCANCODE_Q, true), 1.0f, input);
   input.BeginFrame();
-  ApplySdlEvent(KeyEvent(SDL_SCANCODE_SPACE, true, /*repeat=*/true), 1.0f,
-                input);
-  EXPECT_FALSE(input.WasPressed(Key::kSpace));
-  EXPECT_TRUE(input.IsDown(Key::kSpace));
+  ApplySdlEvent(KeyEvent(SDL_SCANCODE_Q, true, /*repeat=*/true), 1.0f, input);
+  EXPECT_FALSE(input.WasPressed(Key::kQ));
+  EXPECT_TRUE(input.IsDown(Key::kQ));
 }
 
 TEST(SdlInputTest, MouseMotionScalesToPixels) {

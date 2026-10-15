@@ -281,16 +281,16 @@ void Renderer::DrawLines(const RenderView& view, const DebugDrawList& lines,
                                              : 0.0f);
   lines_.Draw(lines.vertices());
   ++stats_.draw_calls;
-  stats_.line_segments += static_cast<long long>(lines.segment_count());
+  stats_.line_segments += static_cast<std::int64_t>(lines.segment_count());
   glDepthMask(GL_TRUE);
 }
 
 void Renderer::DrawAxisGizmo(const RenderView& view) {
   // A small orthographic view of the world axes, rotated like the camera,
   // in the bottom-left corner of the viewport.
-  const int size = std::clamp(view.height / 7, 64, 140);
-  const int margin = size / 6;
-  glViewport(margin, margin, size, size);
+  const AxisGizmoLayout layout =
+      ComputeAxisGizmoLayout(view.width, view.height);
+  glViewport(layout.x, layout.y, layout.size, layout.size);
   glDisable(GL_DEPTH_TEST);
   glEnable(GL_BLEND);
 

@@ -51,6 +51,7 @@ class RenderTarget {
   int width_ = 0;
   int height_ = 0;
   int samples_ = -1;
+  int requested_samples_ = -1;
 };
 
 }  // namespace aerolab

@@ -8,6 +8,7 @@
 #include "geometry/debug_draw.h"
 #include "geometry/mesh_library.h"
 #include "math/aabb.h"
+#include "render/axis_gizmo.h"
 #include "render/gpu_mesh.h"
 #include "render/render_types.h"
 #include "render/shader.h"

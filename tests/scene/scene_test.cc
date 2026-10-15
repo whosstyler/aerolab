@@ -131,6 +131,21 @@ TEST(SceneTest, ReparentUnderSingularParentFails) {
   EXPECT_VEC3_NEAR(scene.Get(child)->local.position, (Vec3{1, 2, 3}), 1e-12);
 }
 
+TEST(SceneTest, ReparentFailureModesLeaveSceneUnchanged) {
+  Scene scene;
+  const EntityId a = scene.Create("A");
+  const EntityId b = scene.Create("B");
+  EXPECT_FALSE(scene.SetParent(a, a));  // Self.
+  const EntityId dead = scene.Create("Dead");
+  scene.Destroy(dead);
+  EXPECT_FALSE(scene.SetParent(dead, a));  // Dead child.
+  EXPECT_FALSE(scene.SetParent(a, dead));  // Dead parent.
+  EXPECT_EQ(scene.roots().size(), 2u);
+  EXPECT_TRUE(scene.SetParent(b, a));
+  EXPECT_FALSE(scene.SetParent(a, b));  // Cycle.
+  EXPECT_EQ(scene.Get(a)->parent, kNoEntity);
+}
+
 TEST(SceneTest, CreateUnderDeadParentMakesRoot) {
   Scene scene;
   const EntityId gone = scene.Create("Gone");

@@ -18,6 +18,7 @@ constexpr std::string_view kUsage =
     "  --screenshot PATH  Save the last frame as PNG (requires --frames).\n"
     "  --no-vsync         Disable vertical sync.\n"
     "  --hidden           Do not show the window (automated runs).\n"
+    "  --select NAME      Select and follow the named object at startup.\n"
     "  --help             Show this message.\n";
 
 std::optional<int> ParsePositiveInt(std::string_view text) {
@@ -60,6 +61,11 @@ ParseResult ParseCommandLine(std::span<const std::string_view> args) {
         return Error("--screenshot expects a file path");
       }
       options.screenshot_path = std::string(args[++i]);
+    } else if (arg == "--select") {
+      if (!has_value || args[i + 1].empty()) {
+        return Error("--select expects an object name");
+      }
+      options.select_name = std::string(args[++i]);
     } else if (arg == "--no-vsync") {
       options.vsync = false;
     } else if (arg == "--hidden") {
