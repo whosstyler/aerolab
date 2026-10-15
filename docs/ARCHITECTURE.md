@@ -3,10 +3,11 @@
 AeroLab is a small, purpose-built 3D simulation engine and editor for exploring
 the mathematics, physics, and graphics programming behind fast-moving aerial
 objects. It is an **educational sandbox**: every object is a generic rigid body,
-a kinematic path or a self-flying game-AI agent driven by configurable toy
-models. Agents only head for points they choose themselves and only ever
-steer away from other objects; there is no guidance, targeting, or
-interception logic anywhere in the code base.
+a kinematic path or a self-flying game-AI agent driven by configurable
+models, from toy drag to a hobby-scale flight model. Agents only head for
+points they choose themselves and only ever steer away from other objects;
+there is no guidance, targeting, or interception logic anywhere in the code
+base.
 
 ## Goals
 

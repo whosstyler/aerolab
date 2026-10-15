@@ -20,9 +20,10 @@ library and a GoogleTest suite.
 It is an educational sandbox. Every object is a generic rigid body, a
 scripted path or a self-flying "game AI" agent driven by configurable
 models, from toy drag and lift to a full flight model: balls, boxes, model
-darts, a glider, a quadrotor, a small trainer plane, springs, orbits. Agents only fly to points they pick themselves and
-only ever steer away from other objects; there is no guidance, targeting or
-interception logic anywhere in the code base.
+darts, a glider, a quadrotor, a small trainer plane, springs, orbits.
+Agents only fly to points they pick themselves and only ever steer away
+from other objects; there is no guidance, targeting or interception logic
+anywhere in the code base.
 
 ![AeroLab editor: hierarchy, 3D viewport, inspector and telemetry](docs/images/editor.png)
 
@@ -125,11 +126,16 @@ interception logic anywhere in the code base.
   runs a cascade (velocity -> acceleration -> thrust vector -> attitude ->
   body rates -> torques -> rotor speeds); the airplane flies course with
   coordinated banked turns, climb rate with pitch, airspeed with throttle,
-  rudder against sideslip, with stall protection and simple energy
-  management (overspeed eases a descent; climb-rate changes are eased in).
+  rudder against sideslip, with stall protection (a speed floor 30% above
+  the stall, a bank cap that keeps turns clear of it, and an
+  angle-of-attack limit that flies a stalled wing out of the stall) and
+  simple energy management (overspeed eases a descent; climb-rate changes
+  are eased in). The quadrotor scales its rotor demands for thin air, and
+  the airplane's speed floor rises with altitude as its stall speed does.
 * Inspector *Airframe* section: airspeed, air density, stall speed, angle
   of attack, sideslip, bank and pitch, throttle and thrust, surface
-  deflections, rotor speeds and thrust-to-weight.
+  deflections, rotor speeds and thrust-to-weight. Physical agents also
+  get a *Wind* setting in their autopilot settings.
 
 **Editor**
 * Docking layout: viewport centre, scene hierarchy left, inspector and
@@ -262,25 +268,28 @@ coordinate conventions, frame anatomy and design notes.
   same structure as small-UAV flight simulators: standard atmosphere,
   stability-derivative aerodynamics, rotor thrust and torque laws,
   actuator lag and cascaded autopilots, and the tests check textbook
-  behaviour (lift carries the weight at trim, the lift curve stalls,
-  a stable glide, hover balance, coordinated turns that bank to
-  g tan(bank), crabbing into a crosswind). It is still a model of
-  *generic* airframes, with typical textbook coefficients rather than
-  values identified from any real aircraft, and it leaves out: dynamic
-  stall and stall hysteresis, propeller slipstream over the tail, ground
-  effect, rotor inflow, blade flapping and translational lift,
-  compressibility (irrelevant at these speeds), battery sag, turbulence
-  and gusts (wind is uniform), and sensors (the autopilots read the true
-  state). Expect believable hobby-scale behaviour, not certification
-  data.
+  behaviour (lift carries the weight at a small angle of attack, the
+  lift curve stalls, a stable 10:1 glide, hover balance also in thin air,
+  coordinated turns at a rate of g tan(bank) / V with no sideslip,
+  crabbing into a crosswind). It is still a model of *generic* airframes,
+  with typical textbook coefficients rather than values identified from
+  any real aircraft, and it leaves out: dynamic stall and stall
+  hysteresis, propeller slipstream over the tail, ground effect, rotor
+  inflow, blade flapping and translational lift, compressibility
+  (irrelevant at these speeds), battery sag, turbulence and gusts (wind
+  is uniform; set it per agent in the inspector), and sensors (the
+  autopilots read the true state and the true wind). Expect believable
+  hobby-scale behaviour, not certification data.
 * **Agents.** The AI decides; the flight model flies. Tests check both
   models' envelope, area and altitude limits, that wings never exceed the
-  stall angle, that same seeds replay exactly, and that agents never touch
-  an obstacle or each other across many seeds. A physical airplane needs
-  room to turn and may swing somewhat past its area edge before coming
-  back. Obstacles are bounding spheres: a long thin prop becomes a large
-  keep-out volume, and one big enough to engulf an agent's whole flight
-  area is ignored by that agent.
+  stall angle (the autopilot limits angle of attack and caps the bank
+  near the stall), that same seeds replay exactly, and that agents never
+  touch an obstacle or each other in the tested scenarios (dozens of seeds
+  for the simple model, a handful per airframe for the physical one). A
+  physical airplane needs room to turn and may swing somewhat past its
+  area edge before coming back. Obstacles are bounding
+  spheres: a long thin prop becomes a large keep-out volume, and one big
+  enough to engulf an agent's whole flight area is ignored by that agent.
 
 ## How it was built
 
