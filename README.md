@@ -64,7 +64,10 @@ anywhere in the code base.
 * Four integrators to compare: explicit Euler, semi-implicit Euler,
   velocity Verlet, RK4. An *integrator comparison* scene launches four
   identical orbits and plots their energy drift.
-* Kinematic paths (circle, figure-eight, helix) with analytic derivatives.
+* Kinematic paths (circle, figure-eight, helix, rounded square) with
+  analytic derivatives; the *Fast square circuit* preset laps a 300 m square
+  at about 40 m/s, banking hard through the corners, and the inspector sets
+  a path's size, corners and speed.
 * Ground contact with restitution and Coulomb friction; events for thrust
   burnout, impacts and numerical divergence.
 * Play, pause, single step, reset and a 0.05x to 16x time scale.

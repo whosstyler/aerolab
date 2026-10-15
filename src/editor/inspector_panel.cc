@@ -298,15 +298,41 @@ void DrawPath(EditorFrame& frame, EntityId id, BodyComponent& body) {
         const std::string name(sim::PathShapeName(shape));
         if (ImGui::Selectable(name.c_str(), shape == path.shape)) {
           path.shape = shape;
+          if (shape == sim::PathShape::kSquare) {
+            // Keep visible straights: corners at most a quarter side.
+            path.corner_radius =
+                std::min(path.corner_radius, 0.25 * std::abs(path.radius));
+          }
           changed = true;
         }
       }
       ImGui::EndCombo();
     }
-    changed |=
-        PropertyDouble("Radius", &path.radius, 0.1f, 0.5, 1000.0, "%.1f m");
-    changed |=
-        PropertyDouble("Period", &path.period, 0.05f, 0.5, 600.0, "%.2f s");
+    if (path.shape == sim::PathShape::kSquare) {
+      double side = 2.0 * path.radius;
+      if (PropertyDouble("Side length", &side, 0.5f, 1.0, 5000.0, "%.1f m")) {
+        path.radius = 0.5 * side;
+        path.corner_radius = std::min(path.corner_radius, path.radius);
+        changed = true;
+      }
+      changed |= PropertyDouble(
+          "Corner radius", &path.corner_radius, 0.1f, 0.1,
+          std::max(path.radius, 0.1), "%.1f m",
+          "Tighter corners mean harder banking; half the side is a circle");
+    } else {
+      changed |=
+          PropertyDouble("Radius", &path.radius, 0.1f, 0.5, 1000.0, "%.1f m");
+    }
+    changed |= PropertyDouble("Period", &path.period, 0.05f, 0.5, 600.0,
+                              "%.2f s", "Seconds per lap");
+    // Speed is the lap length over the period; editing it sets the period.
+    double speed = sim::PathLapLength(path) / std::max(path.period, 1e-3);
+    if (PropertyDouble("Speed", &speed, 0.1f, 0.1, 500.0, "%.1f m/s",
+                       "Average speed around the lap")) {
+      path.period =
+          std::clamp(sim::PathPeriodForSpeed(path, speed), 0.5, 600.0);
+      changed = true;
+    }
     if (path.shape == sim::PathShape::kHelix) {
       changed |= PropertyDouble("Climb rate", &path.climb_rate, 0.01f, -50.0,
                                 50.0, "%.2f m/s");

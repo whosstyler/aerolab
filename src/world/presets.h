@@ -15,17 +15,18 @@ namespace aerolab {
 // Ready-made motion setups built from the generic force-model terms. Each
 // is a classroom physics scenario, not a model of any real system.
 enum class MotionPreset {
-  kBallistic,    // Launched at an angle; gravity + drag, nose follows flow.
-  kPowered,      // Short constant-thrust burn, then a ballistic coast.
-  kGlider,       // Wing lift and drag: glides, with phugoid oscillation.
-  kOrbit,        // Circular orbit around an inverse-square attractor.
-  kOscillator,   // 3D isotropic spring: an elliptical loop.
-  kTumble,       // Torque-free spin about the intermediate axis.
-  kCirclePath,   // Kinematic banked circle.
-  kFigureEight,  // Kinematic figure-eight.
-  kHelix,        // Kinematic climbing spiral.
-  kAutoHover,    // Flies itself, multirotor-style (game AI).
-  kAutoWing,     // Flies itself, airplane-style (game AI).
+  kBallistic,      // Launched at an angle; gravity + drag, nose follows flow.
+  kPowered,        // Short constant-thrust burn, then a ballistic coast.
+  kGlider,         // Wing lift and drag: glides, with phugoid oscillation.
+  kOrbit,          // Circular orbit around an inverse-square attractor.
+  kOscillator,     // 3D isotropic spring: an elliptical loop.
+  kTumble,         // Torque-free spin about the intermediate axis.
+  kCirclePath,     // Kinematic banked circle.
+  kFigureEight,    // Kinematic figure-eight.
+  kHelix,          // Kinematic climbing spiral.
+  kSquareCircuit,  // Kinematic huge rounded square, flown fast.
+  kAutoHover,      // Flies itself, multirotor-style (game AI).
+  kAutoWing,       // Flies itself, airplane-style (game AI).
   kCount,
 };
 

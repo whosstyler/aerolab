@@ -2,6 +2,7 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <cmath>
 
 #include "math/quat.h"
@@ -141,6 +142,7 @@ TEST_P(KinematicPathTest, DerivativesMatchFiniteDifferences) {
   path.shape = GetParam();
   path.center = {5, 20, -3};
   path.radius = 12.0;
+  path.corner_radius = 4.0;  // Square only.
   path.period = 9.0;
   const double t = 3.7;
   const double h = 1e-5;
@@ -160,7 +162,8 @@ TEST_P(KinematicPathTest, DerivativesMatchFiniteDifferences) {
 INSTANTIATE_TEST_SUITE_P(AllShapes, KinematicPathTest,
                          ::testing::Values(PathShape::kCircle,
                                            PathShape::kFigureEight,
-                                           PathShape::kHelix));
+                                           PathShape::kHelix,
+                                           PathShape::kSquare));
 
 TEST(KinematicPathTest, CircleBanksIntoTheTurn) {
   KinematicPath path;
@@ -172,6 +175,131 @@ TEST(KinematicPathTest, CircleBanksIntoTheTurn) {
   // vector toward it.
   EXPECT_GT(Dot(up, s.acceleration), 0.0);
   EXPECT_NEAR(Length(s.position - path.center), path.radius, 1e-9);
+}
+
+TEST(KinematicPathTest, SquareFliesAtConstantSpeedAroundRoundedCorners) {
+  KinematicPath path;
+  path.shape = PathShape::kSquare;
+  path.center = {100.0, 12.0, -40.0};
+  path.radius = 50.0;  // Half the side.
+  path.corner_radius = 10.0;
+  path.period = 20.0;
+  const double lap = 8.0 * (50.0 - 10.0) + kTwoPi * 10.0;
+  const double speed = lap / path.period;
+  EXPECT_NEAR(PathLapLength(path), lap, 1e-9);
+
+  // Starts in the middle of the +X side heading -Z, like the circle.
+  const PathSample start = SamplePath(path, 0.0);
+  EXPECT_VEC3_NEAR(start.position, (Vec3{150.0, 12.0, -40.0}), 1e-9);
+  EXPECT_VEC3_NEAR(start.velocity, (Vec3{0.0, 0.0, -speed}), 1e-9);
+
+  double max_accel = 0.0;
+  int straight_samples = 0;
+  for (int i = 0; i <= 4000; ++i) {
+    const PathSample s = SamplePath(path, path.period * i / 4000.0);
+    ASSERT_NEAR(Length(s.velocity), speed, 1e-9);
+    ASSERT_LE(std::abs(s.position.x - path.center.x), 50.0 + 1e-9);
+    ASSERT_LE(std::abs(s.position.z - path.center.z), 50.0 + 1e-9);
+    ASSERT_EQ(s.position.y, path.center.y);
+    const double accel = Length(s.acceleration);
+    max_accel = std::max(max_accel, accel);
+    if (accel == 0.0) ++straight_samples;
+  }
+  // Turning only in the corners, at exactly v^2 / r there.
+  EXPECT_NEAR(max_accel, speed * speed / 10.0, 1e-9);
+  EXPECT_GT(straight_samples, 3000);
+  // One lap later it is back where it started.
+  EXPECT_VEC3_NEAR(SamplePath(path, path.period).position, start.position,
+                   1e-9);
+}
+
+TEST(KinematicPathTest, ClockwiseSquareMirrorsTheTurns) {
+  KinematicPath path;
+  path.shape = PathShape::kSquare;
+  path.radius = 30.0;
+  path.corner_radius = 5.0;
+  path.clockwise = true;
+  const PathSample start = SamplePath(path, 0.0);
+  EXPECT_GT(start.velocity.z, 0.0);  // Heads +Z instead of -Z.
+  // About a quarter lap in, it is on the +Z side.
+  EXPECT_GT(SamplePath(path, path.period * 0.3).position.z, 25.0);
+}
+
+TEST(KinematicPathTest, SquareCornerDerivativesMatchFiniteDifferences) {
+  for (bool clockwise : {false, true}) {
+    KinematicPath path;
+    path.shape = PathShape::kSquare;
+    path.radius = 12.0;
+    path.corner_radius = 4.0;
+    path.period = 9.0;
+    path.clockwise = clockwise;
+    const double straight = 2.0 * (12.0 - 4.0);
+    const double arc = kHalfPi * 4.0;
+    const double speed = PathLapLength(path) / path.period;
+    for (int corner = 0; corner < 4; ++corner) {
+      // The middle of each rounded corner.
+      const double s = 0.5 * straight + corner * (arc + straight) + 0.5 * arc;
+      const double t = s / speed;
+      const double h = 1e-5;
+      const PathSample at = SamplePath(path, t);
+      const PathSample ahead = SamplePath(path, t + h);
+      const PathSample behind = SamplePath(path, t - h);
+      EXPECT_VEC3_NEAR(at.velocity,
+                       (ahead.position - behind.position) / (2 * h), 1e-5);
+      EXPECT_VEC3_NEAR(at.acceleration,
+                       (ahead.velocity - behind.velocity) / (2 * h), 1e-5);
+      EXPECT_NEAR(Length(at.acceleration), speed * speed / 4.0, 1e-9);
+    }
+  }
+}
+
+TEST(KinematicPathTest, SquareBanksSmoothlyThroughCorners) {
+  KinematicPath path;
+  path.shape = PathShape::kSquare;
+  path.radius = 150.0;
+  path.corner_radius = 40.0;
+  path.period = PathPeriodForSpeed(path, 40.0);
+  const double dt = 1.0 / 120.0;
+  double steepest = 0.0;
+  double max_bank = 0.0;
+  Vec3 previous_up = Rotate(SamplePath(path, 0.0).orientation, Vec3::UnitY());
+  for (int i = 1; i < static_cast<int>(path.period / dt); ++i) {
+    const PathSample s = SamplePath(path, i * dt);
+    const Vec3 up = Rotate(s.orientation, Vec3::UnitY());
+    steepest = std::max(steepest, AngleBetween(up, previous_up));
+    max_bank = std::max(max_bank, AngleBetween(up, Vec3::UnitY()));
+    previous_up = up;
+  }
+  // Rolls into a steep bank but never snaps: the old line-and-arc bank
+  // jumped about 76 degrees in one step; now the up axis (which also turns
+  // with the heading) moves at most a couple of degrees per step.
+  EXPECT_GT(max_bank, Radians(60.0));
+  EXPECT_LT(steepest, Radians(2.5));
+}
+
+TEST(KinematicPathTest, PeriodForSpeedRoundTripsForEveryShape) {
+  for (PathShape shape : AllPathShapes()) {
+    KinematicPath path;
+    path.shape = shape;
+    path.radius = 12.0;
+    path.climb_rate = 3.0;
+    path.period = PathPeriodForSpeed(path, 25.0);
+    EXPECT_NEAR(PathLapLength(path) / path.period, 25.0, 1e-6)
+        << PathShapeName(shape);
+  }
+}
+
+TEST(KinematicPathTest, LapLengthOfEveryShape) {
+  KinematicPath path;
+  path.radius = 10.0;
+  path.period = 5.0;
+  EXPECT_NEAR(PathLapLength(path), kTwoPi * 10.0, 1e-9);
+  path.shape = PathShape::kHelix;
+  path.climb_rate = 2.0;
+  EXPECT_NEAR(PathLapLength(path), std::hypot(kTwoPi * 10.0, 10.0), 1e-9);
+  path.shape = PathShape::kFigureEight;
+  EXPECT_GT(PathLapLength(path), 4.0 * 10.0);  // Longer than its span.
+  EXPECT_LT(PathLapLength(path), kTwoPi * 10.0);
 }
 
 }  // namespace

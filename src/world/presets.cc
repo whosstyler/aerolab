@@ -45,6 +45,8 @@ Color PresetTrailColor(MotionPreset preset) {
       return FromHex(0xF9A8D4);
     case MotionPreset::kTumble:
       return FromHex(0xFDE68A);
+    case MotionPreset::kSquareCircuit:
+      return FromHex(0xFCA5A5);
     case MotionPreset::kAutoHover:
       return FromHex(0x5EEAD4);
     case MotionPreset::kAutoWing:
@@ -80,6 +82,8 @@ std::string_view MotionPresetName(MotionPreset preset) {
       return "Figure-eight path";
     case MotionPreset::kHelix:
       return "Helix path";
+    case MotionPreset::kSquareCircuit:
+      return "Fast square circuit";
     case MotionPreset::kAutoHover:
       return "AI hover flight";
     case MotionPreset::kAutoWing:
@@ -118,6 +122,9 @@ std::string_view MotionPresetDescription(MotionPreset preset) {
              "acceleration.";
     case MotionPreset::kHelix:
       return "Kinematic: a circle with constant climb rate.";
+    case MotionPreset::kSquareCircuit:
+      return "Kinematic: laps a 300 m square at 40 m/s (144 km/h), "
+             "banking hard through rounded corners.";
     case MotionPreset::kAutoHover:
       return "Flies itself like a game AI: picks its own destinations and "
              "speeds, hovers for a while, and steers clear of the ground, "
@@ -224,11 +231,18 @@ void ApplyMotionPreset(Scene& scene, EntityId id, MotionPreset preset) {
       break;
     case MotionPreset::kCirclePath:
     case MotionPreset::kFigureEight:
-    case MotionPreset::kHelix: {
+    case MotionPreset::kHelix:
+    case MotionPreset::kSquareCircuit: {
       body.motion = MotionType::kKinematic;
       body.ground_contact = false;
       sim::KinematicPath& path = body.path;
-      if (preset == MotionPreset::kFigureEight) {
+      if (preset == MotionPreset::kSquareCircuit) {
+        constexpr double kCircuitSpeed = 40.0;  // m/s
+        path.shape = sim::PathShape::kSquare;
+        path.radius = 150.0;  // 300 m sides.
+        path.corner_radius = 40.0;
+        path.period = sim::PathLapLength(path) / kCircuitSpeed;
+      } else if (preset == MotionPreset::kFigureEight) {
         path.shape = sim::PathShape::kFigureEight;
         path.radius = 14.0;
         path.period = 18.0;

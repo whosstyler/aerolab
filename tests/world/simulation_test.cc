@@ -83,6 +83,21 @@ TEST(SimulationTest, TrailSamplesAtItsInterval) {
               1.0);
 }
 
+TEST(SimulationTest, SquareCircuitLapsFastAroundTheSpawnPoint) {
+  Scene scene;
+  const EntityId quad = Spawn(scene, Archetype::kQuadrotor, {10, 12, -5});
+  ApplyMotionPreset(scene, quad, MotionPreset::kSquareCircuit);
+  const BodyComponent& body = *scene.Get(quad)->body;
+  EXPECT_EQ(body.motion, MotionType::kKinematic);
+  EXPECT_EQ(body.path.shape, sim::PathShape::kSquare);
+  // It starts where it was spawned and laps at about 40 m/s.
+  EXPECT_VEC3_NEAR(body.state.position, (Vec3{10, 12, -5}), 1e-9);
+  SimulationSystem simulation(1.0 / 120.0);
+  for (int i = 0; i < 240; ++i) simulation.StepOnce(scene);
+  EXPECT_NEAR(Length(scene.Get(quad)->body->state.velocity), 40.0, 1e-6);
+  EXPECT_NEAR(scene.Get(quad)->body->state.position.y, 12.0, 1e-9);
+}
+
 TEST(SimulationTest, RelaunchUsesStoredLaunchPoseNotCurrentPosition) {
   Scene scene;
   const EntityId id = SpawnBallistic(scene);
