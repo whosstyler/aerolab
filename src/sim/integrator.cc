@@ -1,5 +1,6 @@
 #include "sim/integrator.h"
 
+#include <functional>
 #include <string_view>
 
 #include "math/quat.h"
@@ -23,6 +24,25 @@ RigidBodyState Offset(const RigidBodyState& state, const StateDerivative& d,
       AdvanceOrientation(state.orientation, d.angular_velocity, h);
   out.angular_velocity = state.angular_velocity + d.angular_acceleration * h;
   return out;
+}
+
+// The RK4 weighted average of four stage derivatives.
+StateDerivative Blend(const StateDerivative& k1, const StateDerivative& k2,
+                      const StateDerivative& k3, const StateDerivative& k4) {
+  const auto blend = [](const Vec3& a, const Vec3& b, const Vec3& c,
+                        const Vec3& d) {
+    return (a + (b + c) * 2.0 + d) / 6.0;
+  };
+  StateDerivative weighted;
+  weighted.velocity = blend(k1.velocity, k2.velocity, k3.velocity, k4.velocity);
+  weighted.acceleration =
+      blend(k1.acceleration, k2.acceleration, k3.acceleration, k4.acceleration);
+  weighted.angular_velocity = blend(k1.angular_velocity, k2.angular_velocity,
+                                    k3.angular_velocity, k4.angular_velocity);
+  weighted.angular_acceleration =
+      blend(k1.angular_acceleration, k2.angular_acceleration,
+            k3.angular_acceleration, k4.angular_acceleration);
+  return weighted;
 }
 
 RigidBodyState ExplicitEuler(const RigidBodyState& s, const MassProperties& m,
@@ -78,21 +98,7 @@ RigidBodyState RungeKutta4(const RigidBodyState& s, const MassProperties& m,
   const StateDerivative k2 = Evaluate(Offset(s, k1, h), m, f, age + h);
   const StateDerivative k3 = Evaluate(Offset(s, k2, h), m, f, age + h);
   const StateDerivative k4 = Evaluate(Offset(s, k3, dt), m, f, age + dt);
-
-  const auto blend = [](const Vec3& a, const Vec3& b, const Vec3& c,
-                        const Vec3& d) {
-    return (a + (b + c) * 2.0 + d) / 6.0;
-  };
-  StateDerivative weighted;
-  weighted.velocity = blend(k1.velocity, k2.velocity, k3.velocity, k4.velocity);
-  weighted.acceleration =
-      blend(k1.acceleration, k2.acceleration, k3.acceleration, k4.acceleration);
-  weighted.angular_velocity = blend(k1.angular_velocity, k2.angular_velocity,
-                                    k3.angular_velocity, k4.angular_velocity);
-  weighted.angular_acceleration =
-      blend(k1.angular_acceleration, k2.angular_acceleration,
-            k3.angular_acceleration, k4.angular_acceleration);
-  return Offset(s, weighted, dt);
+  return Offset(s, Blend(k1, k2, k3, k4), dt);
 }
 
 }  // namespace
@@ -111,6 +117,19 @@ std::string_view IntegratorName(Integrator integrator) {
       break;
   }
   return "Unknown";
+}
+
+RigidBodyState StepRk4(const RigidBodyState& state, const MassProperties& mass,
+                       const WrenchFunction& wrench, double time, double dt) {
+  const auto derivative = [&](const RigidBodyState& s, double t) {
+    return DerivativeFromWrench(s, mass, wrench(s, t));
+  };
+  const double h = 0.5 * dt;
+  const StateDerivative k1 = derivative(state, time);
+  const StateDerivative k2 = derivative(Offset(state, k1, h), time + h);
+  const StateDerivative k3 = derivative(Offset(state, k2, h), time + h);
+  const StateDerivative k4 = derivative(Offset(state, k3, dt), time + dt);
+  return Offset(state, Blend(k1, k2, k3, k4), dt);
 }
 
 RigidBodyState Step(const RigidBodyState& state, const MassProperties& mass,

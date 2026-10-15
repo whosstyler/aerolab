@@ -69,6 +69,12 @@ struct ForceBreakdown {
   Vec3 total_torque;  // N m, world frame
 };
 
+// Total force and torque on a body about its centre of mass, world frame.
+struct Wrench {
+  Vec3 force;   // N
+  Vec3 torque;  // N m
+};
+
 // Time derivative of a rigid-body state.
 struct StateDerivative {
   Vec3 velocity;              // d(position)/dt
@@ -82,6 +88,13 @@ struct StateDerivative {
 ForceBreakdown ComputeForces(const RigidBodyState& state,
                              const MassProperties& mass,
                              const ForceModel& model, double age);
+
+// Newton-Euler equations for an arbitrary wrench: linear acceleration F / m
+// and angular acceleration from Euler's rigid-body equations,
+// I w' + w x (I w) = T, in body axes.
+StateDerivative DerivativeFromWrench(const RigidBodyState& state,
+                                     const MassProperties& mass,
+                                     const Wrench& wrench);
 
 // Newton-Euler equations: linear acceleration F / m and angular acceleration
 // from Euler's rigid-body equations, I w' + w x (I w) = T, in body axes.

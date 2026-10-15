@@ -69,9 +69,16 @@ StateDerivative Evaluate(const RigidBodyState& state,
                          const MassProperties& mass, const ForceModel& model,
                          double age) {
   const ForceBreakdown forces = ComputeForces(state, mass, model, age);
+  return DerivativeFromWrench(state, mass,
+                              Wrench{forces.total_force, forces.total_torque});
+}
+
+StateDerivative DerivativeFromWrench(const RigidBodyState& state,
+                                     const MassProperties& mass,
+                                     const Wrench& wrench) {
   StateDerivative d;
   d.velocity = state.velocity;
-  d.acceleration = forces.total_force / std::max(mass.mass, kMinMass);
+  d.acceleration = wrench.force / std::max(mass.mass, kMinMass);
   d.angular_velocity = state.angular_velocity;
 
   // Euler's equations are simplest in body axes, where the inertia tensor is
@@ -80,7 +87,7 @@ StateDerivative Evaluate(const RigidBodyState& state,
   const Quat to_body = Conjugate(state.orientation);
   const Vec3 inertia = SafeInertia(mass);
   const Vec3 omega_body = Rotate(to_body, state.angular_velocity);
-  const Vec3 torque_body = Rotate(to_body, forces.total_torque);
+  const Vec3 torque_body = Rotate(to_body, wrench.torque);
   const Vec3 momentum_body = Hadamard(inertia, omega_body);
   const Vec3 rhs = torque_body - Cross(omega_body, momentum_body);
   const Vec3 alpha_body{rhs.x / inertia.x, rhs.y / inertia.y,

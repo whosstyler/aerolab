@@ -2,6 +2,7 @@
 #define AEROLAB_SIM_INTEGRATOR_H_
 
 #include <array>
+#include <functional>
 #include <string_view>
 
 #include "sim/force_model.h"
@@ -53,6 +54,18 @@ constexpr std::array<Integrator, kIntegratorCount> AllIntegrators() {
 RigidBodyState Step(const RigidBodyState& state, const MassProperties& mass,
                     const ForceModel& model, double age, double dt,
                     Integrator integrator);
+
+// The wrench on a body as a function of its state and time; vehicle models
+// (aerodynamics, rotors) provide one with their actuator settings held
+// fixed over the step.
+using WrenchFunction =
+    std::function<Wrench(const RigidBodyState& state, double time)>;
+
+// Advances `state` by `dt` seconds with classic RK4 under `wrench`,
+// evaluated at the four stage times (`time` is the start of the step).
+// Orientation advances through the exact quaternion exponential map.
+RigidBodyState StepRk4(const RigidBodyState& state, const MassProperties& mass,
+                       const WrenchFunction& wrench, double time, double dt);
 
 }  // namespace aerolab::sim
 

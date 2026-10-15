@@ -48,6 +48,44 @@ TEST(IntegratorTest, AllNamesAreDistinct) {
   }
 }
 
+TEST(IntegratorTest, WrenchStepMatchesTheForceModelStep) {
+  // The generic RK4 step under the force model's own wrench reproduces
+  // the built-in RK4 step exactly.
+  ForceModel model;
+  model.quadratic_drag = 0.02;
+  model.body_torque = {0.0, 0.3, 0.1};
+  MassProperties mass = BoxMassProperties(2.0, {0.5, 0.3, 1.2});
+  RigidBodyState state;
+  state.velocity = {12.0, 8.0, -3.0};
+  state.angular_velocity = {0.4, -0.2, 1.1};
+  const WrenchFunction wrench = [&](const RigidBodyState& s, double t) {
+    const ForceBreakdown f = ComputeForces(s, mass, model, t);
+    return Wrench{f.total_force, f.total_torque};
+  };
+  RigidBodyState a = state;
+  RigidBodyState b = state;
+  for (int i = 0; i < 50; ++i) {
+    a = Step(a, mass, model, i * 0.01, 0.01, Integrator::kRungeKutta4);
+    b = StepRk4(b, mass, wrench, i * 0.01, 0.01);
+  }
+  EXPECT_EQ(a.position, b.position);
+  EXPECT_EQ(a.velocity, b.velocity);
+  EXPECT_EQ(a.angular_velocity, b.angular_velocity);
+}
+
+TEST(IntegratorTest, WrenchStepIsExactForConstantForce) {
+  MassProperties mass;
+  mass.mass = 4.0;
+  const WrenchFunction push = [](const RigidBodyState&, double) {
+    return Wrench{{8.0, -4.0, 0.0}, Vec3::Zero()};
+  };
+  RigidBodyState state;
+  state = StepRk4(state, mass, push, 0.0, 3.0);
+  // x = a t^2 / 2 with a = F / m = (2, -1, 0).
+  EXPECT_VEC3_NEAR(state.position, (Vec3{9.0, -4.5, 0.0}), 1e-12);
+  EXPECT_VEC3_NEAR(state.velocity, (Vec3{6.0, -3.0, 0.0}), 1e-12);
+}
+
 TEST(IntegratorTest, BallisticFlightMatchesClosedForm) {
   // Constant acceleration: second-order and higher methods are exact (up to
   // rounding); Euler variants have an O(dt) error.
