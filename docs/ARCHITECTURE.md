@@ -201,8 +201,16 @@ inspector edit) and leaves it out of rendering, the selection and debug
 overlays, labels and picking.
 
 **Autonomous agents.** `sim/flight_agent` is pure decision and motion
-logic with no scene types: `StepAgent(params, obstacles, dt, brain,
-motion)`. `world/autonomy` is the sensing side: it turns the scene into
+logic with no scene types. `PlanAgent(params, obstacles, dt, motion,
+brain)` senses, decides and steers, leaving the wanted velocity in the
+brain; `StepAgent` adds the simple point-mass move. With
+`FlightModel::kPhysical`, `StepPhysicalAgent` (sim/agent_vehicle) runs the
+same plan and then flies an `AgentVehicle`: an autopilot from
+sim/flight_control sets the actuators of a sim/multirotor or sim/fixed_wing
+airframe, whose wrench (sim/aerodynamics, sim/atmosphere) is integrated
+with the generic `StepRk4(state, mass, WrenchFunction, time, dt)`. The
+vehicle, like the brain, is plain copyable data, so the forecast copies
+both. `world/autonomy` is the sensing side: it turns the scene into
 bounding-sphere obstacles (bodies plus free-standing props; a body's
 attached parts such as rotors are skipped) once per fixed step, before any
 body moves, so stepping order does not matter. The brain, including its

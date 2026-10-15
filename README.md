@@ -7,8 +7,9 @@
 > quaternion rotation, drag, lift and ballistic arcs, orbital motion,
 > coordinate frames, steering behaviours, and how a real-time engine is put
 > together. These are the same fundamentals that professional aerospace and
-> defense-grade simulations are built on, explored here with generic objects
-> and deliberately simple models.
+> defense-grade simulations are built on, explored here with generic objects:
+> simple teaching models, plus a coefficient-based 6-DOF flight model of a
+> generic hobby-scale quadrotor and trainer airplane.
 
 AeroLab is a small, purpose-built **3D simulation engine and editor** for
 learning the mathematics, physics, graphics programming and software
@@ -17,9 +18,9 @@ ground up in C++20 on SDL3, OpenGL 3.3 and Dear ImGui, with its own math
 library and a GoogleTest suite.
 
 It is an educational sandbox. Every object is a generic rigid body, a
-scripted path or a self-flying "game AI" agent driven by configurable toy
-models: balls, boxes, model darts, a glider, a quadrotor frame, a small
-plane, springs, orbits. Agents only fly to points they pick themselves and
+scripted path or a self-flying "game AI" agent driven by configurable
+models, from toy drag and lift to a full flight model: balls, boxes, model
+darts, a glider, a quadrotor, a small trainer plane, springs, orbits. Agents only fly to points they pick themselves and
 only ever steer away from other objects; there is no guidance, targeting or
 interception logic anywhere in the code base.
 
@@ -82,16 +83,53 @@ interception logic anywhere in the code base.
   frame, so agents anticipate other moving objects; wings also check the
   arc they are turning on, and anything too close pushes the agent away.
   An agent whose destination becomes occupied picks another one.
-* Two flight envelopes: hover (stops, tilts up to a limit to accelerate,
-  jerk-limited) and wing (minimum airspeed, bank-limited turns with a roll
-  rate limit, climb and path-angle limits, coordinated-turn attitude).
+* Two flight models per agent (inspector *Flight model*):
+  * **Physical** (the default for scene agents): the AI only decides what
+    velocity it wants; an autopilot flies a real airframe there by moving
+    its actuators, and forces and moments do the rest (see *Flight
+    physics* below).
+  * **Simple**: an idealized point mass within a hover envelope (stops,
+    tilts to accelerate, jerk-limited) or a wing envelope (minimum
+    airspeed, bank-limited turns with a roll-rate limit, climb and
+    path-angle limits).
 * Deterministic: a seeded generator means the same seed gives the same
   flight, and the look-ahead line replays the agent's own future
-  decisions (exactly, as long as nothing else changes course).
+  decisions (with the physical model, its airframe and autopilot too),
+  exactly as long as nothing else changes course.
 * Inspector *Autopilot* section: what it is doing, its destination, leg
   speed and timers, what it is keeping clear of, plus its main tuning knobs.
   The *AI* toolbar toggle draws destinations, the flight area, the
   steering request and the object being avoided.
+
+**Flight physics (physical flight model)**
+* International Standard Atmosphere (troposphere and lower stratosphere):
+  density, pressure, temperature and speed of sound with altitude; thrust
+  and aerodynamic forces scale with the local air density.
+* Fixed wing (a generic 2 kg, 1.8 m span trainer): angle of attack and
+  sideslip from the airflow (wind included); lift linear in angle of
+  attack, blending into flat-plate behaviour past a 14 degree stall;
+  parabolic drag polar (parasite plus induced drag); side force; static
+  stability and damping derivatives in pitch, roll and yaw (weathervane,
+  dihedral effect, roll and pitch damping); elevator, ailerons and rudder;
+  a propeller whose thrust fades with airspeed; throttle lag and
+  rate-limited servos. Trims near 14 m/s, stalls near 8 m/s and glides at
+  about 10:1.
+* Multirotor (a generic 1.2 kg X-layout quadrotor): four rotors with
+  thrust k_T w^2 and reaction torque k_Q w^2, alternating spin directions,
+  first-order motor lag, linear and quadratic body drag against the air,
+  and a mixer that inverts the thrust/torque allocation and gives up yaw
+  before attitude when the motors saturate.
+* Full 6-DOF rigid-body dynamics (Euler's equations with gyroscopic
+  coupling) integrated with RK4, sub-stepped to at most 1/120 s.
+* Autopilots modelled on real flight-controller structure: the quadrotor
+  runs a cascade (velocity -> acceleration -> thrust vector -> attitude ->
+  body rates -> torques -> rotor speeds); the airplane flies course with
+  coordinated banked turns, climb rate with pitch, airspeed with throttle,
+  rudder against sideslip, with stall protection and simple energy
+  management (overspeed eases a descent; climb-rate changes are eased in).
+* Inspector *Airframe* section: airspeed, air density, stall speed, angle
+  of attack, sideslip, bank and pitch, throttle and thrust, surface
+  deflections, rotor speeds and thrust-to-weight.
 
 **Editor**
 * Docking layout: viewport centre, scene hierarchy left, inspector and
@@ -217,15 +255,32 @@ coordinate conventions, frame anatomy and design notes.
   1e6 m from the origin or 1e5 m/s (or rad/s), is frozen and stays put until
   the next reset, with an event explaining which limit it hit. This keeps
   single-precision rendering and the UI sane.
-* **Toy models.** Drag, lift and the weathervane torque are textbook
-  idealizations for teaching, not aerodynamic models of any real vehicle.
-* **Agents.** Flight agents are point masses with simple envelopes, tuned
-  to look plausible: they demonstrate game-AI decision making and steering,
-  not the flight control of any real aircraft. Tests check their envelope,
-  area and altitude limits on every step, and that they never touch an
-  obstacle across many seeds. Obstacles are bounding spheres: a long
-  thin prop becomes a large keep-out volume, and one big enough to engulf
-  an agent's whole flight area is ignored by that agent.
+* **Toy models.** The per-body force model (drag, lift and weathervane
+  torque on darts, the glider and boxes) is a set of textbook
+  idealizations for teaching.
+* **How realistic is the flight model?** The physical model uses the
+  same structure as small-UAV flight simulators: standard atmosphere,
+  stability-derivative aerodynamics, rotor thrust and torque laws,
+  actuator lag and cascaded autopilots, and the tests check textbook
+  behaviour (lift carries the weight at trim, the lift curve stalls,
+  a stable glide, hover balance, coordinated turns that bank to
+  g tan(bank), crabbing into a crosswind). It is still a model of
+  *generic* airframes, with typical textbook coefficients rather than
+  values identified from any real aircraft, and it leaves out: dynamic
+  stall and stall hysteresis, propeller slipstream over the tail, ground
+  effect, rotor inflow, blade flapping and translational lift,
+  compressibility (irrelevant at these speeds), battery sag, turbulence
+  and gusts (wind is uniform), and sensors (the autopilots read the true
+  state). Expect believable hobby-scale behaviour, not certification
+  data.
+* **Agents.** The AI decides; the flight model flies. Tests check both
+  models' envelope, area and altitude limits, that wings never exceed the
+  stall angle, that same seeds replay exactly, and that agents never touch
+  an obstacle or each other across many seeds. A physical airplane needs
+  room to turn and may swing somewhat past its area edge before coming
+  back. Obstacles are bounding spheres: a long thin prop becomes a large
+  keep-out volume, and one big enough to engulf an agent's whole flight
+  area is ignored by that agent.
 
 ## How it was built
 
