@@ -44,8 +44,15 @@ bool MatchesFilter(const Scene& scene, EntityId id, std::string_view filter) {
 
 const char* TypeTag(const Entity& entity) {
   if (entity.body.has_value()) {
-    return entity.body->motion == MotionType::kKinematic ? "kinematic"
-                                                         : "dynamic";
+    switch (entity.body->motion) {
+      case MotionType::kKinematic:
+        return "kinematic";
+      case MotionType::kAutonomous:
+        return "autonomous";
+      case MotionType::kDynamic:
+        break;
+    }
+    return "dynamic";
   }
   if (entity.spin.has_value()) return "spinner";
   if (entity.render.has_value()) return "static";

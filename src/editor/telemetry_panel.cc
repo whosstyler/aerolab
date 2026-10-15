@@ -139,7 +139,7 @@ void DrawBodyPlots(const Entity& entity, EditorState& state) {
     ImGui::TableNextColumn();
     plot("Acceleration", "m/s^2", acceleration);
     ImGui::TableNextColumn();
-    if (body.motion == MotionType::kDynamic) {
+    if (body.motion != MotionType::kKinematic) {
       plot("Energy", "J", energy);
     } else {
       HelpText("Kinematic paths are scripted: no energy is tracked.");

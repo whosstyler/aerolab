@@ -5,8 +5,10 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstddef>
 #include <format>
 #include <string>
+#include <string_view>
 
 #include "camera/camera.h"
 #include "editor/panels.h"
@@ -14,12 +16,15 @@
 #include "editor/widgets.h"
 #include "imgui.h"
 #include "math/quat.h"
+#include "math/random.h"
 #include "math/scalar.h"
 #include "math/transform.h"
+#include "sim/flight_agent.h"
 #include "sim/force_model.h"
 #include "sim/integrator.h"
 #include "sim/kinematic_path.h"
 #include "sim/rigid_body.h"
+#include "world/autonomy.h"
 #include "world/presets.h"
 #include "world/simulation.h"
 
@@ -97,12 +102,14 @@ void DrawLiveState(const BodyComponent& body) {
                  Format3(s.angular_velocity * (180.0 / kPi), "deg/s"));
     PropertyText("Altitude", std::format("{:.2f} m", s.position.y));
     PropertyText("Age", std::format("{:.2f} s", body.age));
-    if (body.motion == MotionType::kDynamic) {
+    if (body.motion != MotionType::kKinematic) {
       const double kinetic = sim::KineticEnergy(s, body.mass);
-      const double potential = sim::PotentialEnergy(s, body.mass, body.forces);
+      const double potential = PotentialEnergy(body);
       PropertyText("Kinetic energy", std::format("{:.1f} J", kinetic));
       PropertyText("Potential energy", std::format("{:.1f} J", potential),
-                   "Gravity, spring and central-body terms");
+                   body.motion == MotionType::kAutonomous
+                       ? "Gravity only: agents ignore the force model"
+                       : "Gravity, spring and central-body terms");
       PropertyText("Total energy",
                    std::format("{:.1f} J", kinetic + potential));
       PropertyText("|Angular mom.|",
@@ -111,7 +118,11 @@ void DrawLiveState(const BodyComponent& body) {
     }
     EndProperties();
   }
-  if (body.halt == BodyHalt::kDiverged) {
+  if (body.halt != BodyHalt::kNone && body.motion == MotionType::kAutonomous) {
+    ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(theme::kWarning),
+                       "The autopilot left the valid range and the body "
+                       "was stopped. Reset to relaunch it.");
+  } else if (body.halt == BodyHalt::kDiverged) {
     ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(theme::kWarning),
                        "Integrator diverged; the body was stopped. "
                        "Try RK4 or a smaller fixed step, then reset.");
@@ -127,11 +138,27 @@ void DrawSimulationSettings(EditorFrame& frame, EntityId id,
   if (!ImGui::CollapsingHeader("Simulation", kOpen)) return;
   if (BeginProperties("##simulation")) {
     PropertyLabel("Motion",
-                  "Dynamic bodies integrate forces; kinematic "
-                  "bodies follow a closed-form path");
-    int motion = body.motion == MotionType::kKinematic ? 1 : 0;
-    if (ImGui::Combo("##motion", &motion, "Dynamic\0Kinematic path\0")) {
-      body.motion = motion == 1 ? MotionType::kKinematic : MotionType::kDynamic;
+                  "Dynamic bodies integrate forces; kinematic bodies "
+                  "follow a closed-form path; autonomous bodies fly "
+                  "themselves (game-style AI)");
+    constexpr std::array<MotionType, 3> kMotions = {
+        MotionType::kDynamic, MotionType::kKinematic, MotionType::kAutonomous};
+    int motion = static_cast<int>(
+        std::find(kMotions.begin(), kMotions.end(), body.motion) -
+        kMotions.begin());
+    if (ImGui::Combo("##motion", &motion,
+                     "Dynamic\0Kinematic path\0Autonomous (AI)\0")) {
+      body.motion = kMotions[static_cast<std::size_t>(motion)];
+      if (body.motion == MotionType::kAutonomous) {
+        if (const Entity* entity = frame.scene->Get(id)) {
+          body.agent =
+              AgentParamsFor(*frame.scene, id, NaturalFlightStyle(*entity));
+          // Centre the area on the launch point it is about to relaunch
+          // from, not wherever the body has flown to.
+          body.agent.area.center = {body.initial.position.x, 0.0,
+                                    body.initial.position.z};
+        }
+      }
       RelaunchFromInitialPose(*frame.scene, id);
     }
     if (body.motion == MotionType::kDynamic) {
@@ -181,6 +208,11 @@ void DrawLaunchConditions(EditorFrame& frame, EntityId id,
   }
   if (ImGui::Button("Relaunch now")) relaunch = true;
   if (pose_changed) {
+    if (body.motion == MotionType::kAutonomous) {
+      // The flight area moves with the launch point.
+      body.agent.area.center.x += position.x - body.initial.position.x;
+      body.agent.area.center.z += position.z - body.initial.position.z;
+    }
     SetLaunchPose(*frame.scene, id, position, orientation);
   } else if (relaunch) {
     RelaunchFromInitialPose(*frame.scene, id);
@@ -276,6 +308,165 @@ void DrawPath(EditorFrame& frame, EntityId id, BodyComponent& body) {
   }
   // Keep the path passing through the launch point.
   if (changed) RelaunchFromInitialPose(*frame.scene, id);
+}
+
+std::string AgentActivity(const BodyComponent& body) {
+  const sim::AgentBrain& brain = body.brain;
+  if (!brain.has_destination) return "Choosing a destination";
+  if (brain.mode == sim::AgentMode::kLoiter) {
+    return body.agent.style == sim::FlightStyle::kWing ? "Circling"
+                                                       : "Hovering";
+  }
+  return "Flying to its destination";
+}
+
+std::string AgentAvoidance(const Scene& scene, const BodyComponent& body) {
+  std::string text;
+  const auto add = [&text](std::string_view part) {
+    if (!text.empty()) text += ", ";
+    text += part;
+  };
+  if (const Entity* other = scene.Get(body.avoiding)) add(other->name);
+  if (body.brain.avoidance.altitude) add("altitude limits");
+  if (body.brain.avoidance.boundary) add("area edge");
+  return text.empty() ? "nothing" : text;
+}
+
+// Live view of the agent's decisions.
+void DrawAutopilot(const Scene& scene, const BodyComponent& body) {
+  if (!ImGui::CollapsingHeader("Autopilot", kOpen)) return;
+  HelpText(
+      "Game-style AI: picks its own destinations inside its flight area, "
+      "flies each leg at a speed it chooses, sometimes loiters, and steers "
+      "clear of the ground, obstacles and other objects. The same seed "
+      "always gives the same flight.");
+  const sim::AgentBrain& brain = body.brain;
+  if (BeginProperties("##autopilot")) {
+    PropertyText("Doing", AgentActivity(body));
+    if (brain.has_destination) {
+      PropertyText(
+          "Destination",
+          std::format("{:.1f}, {:.1f}, {:.1f} m  ({:.0f} m away)",
+                      brain.destination.x, brain.destination.y,
+                      brain.destination.z,
+                      Distance(brain.destination, body.state.position)));
+      PropertyText("Leg speed", std::format("{:.1f} m/s", brain.leg_speed));
+      PropertyText(
+          brain.mode == sim::AgentMode::kLoiter ? "Loiter time" : "Leg time",
+          std::format("{:.1f} / {:.1f} s", brain.mode_time,
+                      brain.mode_duration),
+          brain.mode == sim::AgentMode::kLoiter
+              ? nullptr
+              : "A leg that takes this long is abandoned for a new one");
+    }
+    PropertyText("Keeping clear of", AgentAvoidance(scene, body));
+    PropertyText("Legs flown", std::format("{}", brain.legs_completed));
+    EndProperties();
+  }
+}
+
+// Tunable behaviour. Most settings apply on the next step; style and seed
+// changes restart the agent's decision making.
+void DrawAutopilotSettings(EditorFrame& frame, EntityId id,
+                           BodyComponent& body) {
+  if (!ImGui::CollapsingHeader("Autopilot settings")) return;
+  sim::AgentParams& agent = body.agent;
+  const bool wing = agent.style == sim::FlightStyle::kWing;
+  bool relaunch = false;
+  bool reseed = false;
+  bool replan = false;
+  if (BeginProperties("##autopilot_settings")) {
+    PropertyLabel("Flight style",
+                  "Hover: can stop and tilts to accelerate. Wing: never "
+                  "stops and banks to turn. Switching loads that style's "
+                  "defaults (keeping the area centre and seed).");
+    const std::string current(sim::FlightStyleName(agent.style));
+    if (ImGui::BeginCombo("##style", current.c_str())) {
+      for (sim::FlightStyle style :
+           {sim::FlightStyle::kHover, sim::FlightStyle::kWing}) {
+        const std::string name(sim::FlightStyleName(style));
+        if (ImGui::Selectable(name.c_str(), style == agent.style) &&
+            style != agent.style) {
+          sim::AgentParams fresh = AgentParamsFor(*frame.scene, id, style);
+          fresh.area.center = agent.area.center;
+          fresh.seed = agent.seed;
+          agent = fresh;
+          relaunch = true;
+        }
+      }
+      ImGui::EndCombo();
+    }
+    PropertyVec3("Area centre", &agent.area.center, 0.1f, "%.1f",
+                 "Centre of the flight area (its height is ignored)");
+    PropertyDouble("Area radius", &agent.area.radius, 0.2f, 2.0, 5000.0,
+                   "%.1f m");
+    PropertyDouble("Min altitude", &agent.area.min_altitude, 0.1f, 0.0, 5000.0,
+                   "%.1f m");
+    PropertyDouble("Max altitude", &agent.area.max_altitude, 0.1f, 0.0, 5000.0,
+                   "%.1f m");
+    if (wing) {
+      PropertyDouble("Min speed", &agent.min_speed, 0.05f, 1.0, 300.0,
+                     "%.1f m/s", "Never flies slower than this");
+    }
+    PropertyDouble("Cruise min", &agent.cruise_speed_min, 0.05f, 0.0, 300.0,
+                   "%.1f m/s", "Each leg picks a cruise speed in this range");
+    PropertyDouble("Cruise max", &agent.cruise_speed_max, 0.05f, 0.0, 300.0,
+                   "%.1f m/s");
+    PropertyDouble("Max speed", &agent.max_speed, 0.05f, 0.5, 300.0,
+                   "%.1f m/s");
+    PropertyDouble("Max accel.", &agent.max_acceleration, 0.05f, 0.1, 100.0,
+                   "%.1f m/s^2");
+    double tilt = Degrees(agent.max_tilt);
+    if (PropertyDouble(wing ? "Max bank" : "Max tilt", &tilt, 0.2f, 1.0, 75.0,
+                       "%.0f deg")) {
+      agent.max_tilt = Radians(tilt);
+    }
+    PropertyDouble("Max climb", &agent.max_climb_rate, 0.05f, 0.1, 100.0,
+                   "%.1f m/s");
+    double chance = agent.loiter_chance * 100.0;
+    if (PropertyDouble("Loiter chance", &chance, 0.5f, 0.0, 100.0, "%.0f %%",
+                       "Chance of loitering at each destination")) {
+      agent.loiter_chance = chance / 100.0;
+    }
+    PropertyDouble("Loiter min", &agent.loiter_min, 0.05f, 0.0, 600.0,
+                   "%.1f s");
+    PropertyDouble("Loiter max", &agent.loiter_max, 0.05f, 0.0, 600.0,
+                   "%.1f s");
+    PropertyDouble("Meander", &agent.meander, 0.01f, 0.0, 1.0, "%.2f",
+                   "How much the heading wanders on the way");
+    PropertyDouble("Clearance", &agent.clearance, 0.05f, 0.0, 100.0, "%.1f m",
+                   "Gap kept between the agent and obstacles");
+    PropertyDouble("Look-ahead", &agent.lookahead, 0.05f, 0.2, 30.0, "%.1f s",
+                   "Seconds of travel scanned ahead for obstacles");
+    PropertyLabel("Seed", "The same seed always gives the same flight");
+    ImGui::SetNextItemWidth(-1.0f);
+    reseed |= ImGui::InputScalar("##seed", ImGuiDataType_U64, &agent.seed);
+    EndProperties();
+  }
+  if (ImGui::Button("New seed")) {
+    agent.seed = MixSeed(agent.seed, 0x5EEDu);
+    reseed = true;
+  }
+  ImGui::SameLine();
+  if (ImGui::Button("Centre area here")) {
+    agent.area.center = {body.state.position.x, 0.0, body.state.position.z};
+  }
+  ImGui::SameLine();
+  if (ImGui::Button("Re-plan")) replan = true;
+
+  if (relaunch) {
+    RelaunchFromInitialPose(*frame.scene, id);
+  } else if (reseed) {
+    // A new random stream, starting from where the agent is now.
+    sim::ResetBrain(agent,
+                    {.position = body.state.position,
+                     .velocity = body.state.velocity,
+                     .acceleration = body.acceleration,
+                     .orientation = body.state.orientation},
+                    body.brain);
+  } else if (replan) {
+    sim::Replan(body.brain);
+  }
 }
 
 void DrawGround(BodyComponent& body) {
@@ -402,6 +593,9 @@ void DrawInspectorPanel(EditorFrame& frame) {
     DrawLaunchConditions(frame, id, body);
     if (body.motion == MotionType::kKinematic) {
       DrawPath(frame, id, body);
+    } else if (body.motion == MotionType::kAutonomous) {
+      DrawAutopilot(*frame.scene, body);
+      DrawAutopilotSettings(frame, id, body);
     } else {
       DrawMass(frame, id, body);
       DrawForces(body.forces);

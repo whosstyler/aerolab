@@ -328,6 +328,10 @@ void Editor::DrawToolbar(EditorFrame& frame, float y, float height) {
   ImGui::SameLine();
   ToggleButton("Predict", &d.predicted_path, "Look-ahead of the selected body");
   ImGui::SameLine();
+  ToggleButton("AI", &d.agent_plans,
+               "Autonomous agents: destinations, flight area and what "
+               "they are avoiding");
+  ImGui::SameLine();
   ToggleButton("Grid", &r.show_grid, "World grid");
 
   // Right-aligned frame rate.

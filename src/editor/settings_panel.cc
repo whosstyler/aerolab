@@ -108,6 +108,10 @@ void DrawDebugSettings(DebugViewOptions& d, EditorState& state) {
                  "Look-ahead of the selected body");
     PropertyDouble("  horizon", &d.prediction_seconds, 0.1f, 0.5, 60.0,
                    "%.1f s");
+    PropertyBool("AI plans", &d.agent_plans,
+                 "Destinations of autonomous agents; for the selected one "
+                 "also its flight area, steering request (pink) and the "
+                 "object it is keeping clear of (red)");
     PropertyBool("Labels", &state.show_labels);
     PropertyBool("HUD", &state.show_hud);
     EndProperties();
