@@ -42,6 +42,11 @@ struct AttitudeAngles {
 
 AttitudeAngles AttitudeOf(const Quat& orientation);
 
+// The steepest bank, up to `bank_limit`, at which a wing at `airspeed` keeps
+// the stall speed of the turn (stall_speed / sqrt(cos bank)) at least 15%
+// below its airspeed; `bank_limit` itself when stall_speed is unknown (0).
+double StallSafeBank(double stall_speed, double airspeed, double bank_limit);
+
 // What an autonomous pilot wants: a velocity in the world and, for hover
 // craft, which way to face.
 struct FlightTarget {
@@ -51,6 +56,10 @@ struct FlightTarget {
   double turn_rate = 0.0;     // Wings: feed-forward turn rate, rad/s (+ left).
 };
 
+// The steepest hover tilt and wing bank the controllers ever fly.
+inline constexpr double kMaxAutopilotTilt = Radians(80.0);
+inline constexpr double kMaxAutopilotBank = Radians(60.0);
+
 // Limits the controllers respect; filled from the agent's envelope.
 struct ControlLimits {
   double max_tilt = Radians(30.0);  // Hover tilt or wing bank, rad
@@ -58,6 +67,9 @@ struct ControlLimits {
   double max_acceleration = 5.0;    // m/s^2
   double min_airspeed = 9.0;        // Wings: stall margin, m/s
   double max_airspeed = 22.0;       // Wings, m/s
+  // Wings: level-flight stall speed at the current altitude, m/s (0 if
+  // unknown). Turns are kept shallow enough to stay clear of it.
+  double stall_speed = 0.0;
 };
 
 // Cascaded multirotor controller: velocity -> acceleration -> thrust

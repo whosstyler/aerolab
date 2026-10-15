@@ -253,6 +253,51 @@ TEST(AgentVehicleTest, TwoHoverAgentsSharingAnAreaNeverTouch) {
   EXPECT_GT(closest, a.params.body_radius + b.params.body_radius);
 }
 
+TEST(AgentVehicleTest, WingAgentFliesSafelyInAWind) {
+  for (std::uint64_t seed = 11; seed <= 12; ++seed) {
+    PhysicalFlight flight = MakePhysicalFlight(FlightStyle::kWing, seed);
+    flight.wind = {4.0, 0.0, 2.0};
+    flight.Run(180.0);
+    EXPECT_GE(flight.brain.legs_completed, 2) << "seed " << seed;
+    EXPECT_LT(flight.max_alpha, flight.vehicle.wing.aero.alpha_stall)
+        << "seed " << seed;
+    EXPECT_GT(flight.min_airspeed,
+              1.1 * StallSpeed(flight.vehicle.wing, kSeaLevelDensity))
+        << "seed " << seed;
+    // Downwind turns cover more ground, so allow a little more room.
+    EXPECT_LT(flight.max_area_excess, 0.4 * flight.params.area.radius)
+        << "seed " << seed;
+  }
+}
+
+TEST(AgentVehicleTest, QuadrotorAndAirplaneSharingAirspaceNeverTouch) {
+  for (std::uint64_t seed = 0; seed < 2; ++seed) {
+    PhysicalFlight quad =
+        MakePhysicalFlight(FlightStyle::kHover, 1000 + seed, {0.0, 15.0, 0.0});
+    PhysicalFlight plane =
+        MakePhysicalFlight(FlightStyle::kWing, 2000 + seed, {6.0, 18.0, 0.0});
+    quad.params.area = plane.params.area;
+    quad.params.area.radius = plane.params.area.radius = 80.0;
+    quad.params.area.min_altitude = plane.params.area.min_altitude = 12.0;
+    quad.params.area.max_altitude = plane.params.area.max_altitude = 30.0;
+    double closest = 1e9;
+    const int steps = static_cast<int>(240.0 / kDt);
+    for (int i = 0; i < steps; ++i) {
+      const std::array<AgentObstacle, 1> sees_plane = {
+          AgentObstacle{plane.state.position, plane.params.body_radius,
+                        plane.state.velocity}};
+      const std::array<AgentObstacle, 1> sees_quad = {AgentObstacle{
+          quad.state.position, quad.params.body_radius, quad.state.velocity}};
+      quad.Step(sees_plane);
+      plane.Step(sees_quad);
+      closest = std::min(closest,
+                         Distance(quad.state.position, plane.state.position));
+    }
+    EXPECT_GT(closest, quad.params.body_radius + plane.params.body_radius)
+        << "seed " << seed;
+  }
+}
+
 TEST(AgentVehicleTest, NonPositiveStepDoesNothing) {
   PhysicalFlight flight = MakePhysicalFlight(FlightStyle::kHover, 1);
   const RigidBodyState before = flight.state;

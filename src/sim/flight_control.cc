@@ -21,6 +21,10 @@ constexpr double kMaxWingPitch = Radians(20.0);
 constexpr double kStallRecoveryGain = Radians(4.0);
 // Overspeed (m/s) at which a wing stops descending altogether.
 constexpr double kOverspeedBand = 3.0;
+// How far below the stall angle the autopilot keeps the angle of attack.
+constexpr double kAlphaMargin = Radians(4.0);
+// Turns keep the airspeed this many times above the stall speed in the turn.
+constexpr double kTurnStallMargin = 1.15;
 // Fastest change of a wing's climb-rate setpoint, m/s^2 (about 0.2 g).
 constexpr double kMaxClimbChange = 2.0;
 // Extra throttle per m/s of climb asked for (climbing costs power).
@@ -51,6 +55,14 @@ double Pid::Update(double error, double measured_rate, double dt) {
   return kp * error + integral - kd * measured_rate;
 }
 
+double StallSafeBank(double stall_speed, double airspeed, double bank_limit) {
+  if (!(stall_speed > 0.0)) return bank_limit;
+  // A bank of phi raises the stall speed by 1 / sqrt(cos phi).
+  const double ratio = kTurnStallMargin * stall_speed / std::max(airspeed, 1.0);
+  return std::min(bank_limit, std::max(std::acos(std::min(ratio * ratio, 1.0)),
+                                       Radians(1.0)));
+}
+
 AttitudeAngles AttitudeOf(const Quat& orientation) {
   const Vec3 forward = Rotate(orientation, -Vec3::UnitZ());
   const Vec3 right = Rotate(orientation, Vec3::UnitX());
@@ -74,7 +86,12 @@ RotorArray QuadController::Update(const MultirotorParams& params,
                                   const RigidBodyState& state, const Vec3& wind,
                                   double dt) {
   const double mass = params.mass.mass;
-  const double tilt = std::clamp(limits.max_tilt, Radians(1.0), Radians(80.0));
+  const double tilt =
+      std::clamp(limits.max_tilt, Radians(1.0), kMaxAutopilotTilt);
+  // Rotors make less thrust and torque in thin air (the mixer works in
+  // sea-level terms), so demands are scaled up to compensate.
+  const double density_ratio = std::max(
+      StandardAtmosphere(state.position.y).density / kSeaLevelDensity, 0.05);
 
   // 1. Velocity error -> wanted acceleration (world axes), within limits.
   const Vec3 error = target.velocity - state.velocity;
@@ -98,8 +115,6 @@ RotorArray QuadController::Update(const MultirotorParams& params,
   const Vec3 airflow = state.velocity - wind;
   const double airspeed = Length(airflow);
   if (airspeed > 1e-6) {
-    const double density_ratio =
-        StandardAtmosphere(state.position.y).density / kSeaLevelDensity;
     const double drag = params.linear_drag * airspeed + params.quadratic_drag *
                                                             density_ratio *
                                                             airspeed * airspeed;
@@ -143,8 +158,9 @@ RotorArray QuadController::Update(const MultirotorParams& params,
   const Vec3 torque =
       Hadamard(inertia, angular_accel) + Cross(omega, Hadamard(inertia, omega));
 
-  // 6. Mixer: rotor speeds for that thrust and torque.
-  return MixRotorSpeeds(params, collective, torque);
+  // 6. Mixer: rotor speeds for that thrust and torque in this air.
+  return MixRotorSpeeds(params, collective / density_ratio,
+                        torque / density_ratio);
 }
 
 void WingAutopilot::Reset() {
@@ -179,8 +195,9 @@ FixedWingCommand WingAutopilot::Update(const FixedWingParams& params,
           std::tan(std::clamp(attitude.pitch, -kMaxRatePitch, kMaxRatePitch));
   const double pitch_rate = q * cos_roll - r * sin_roll;
   const double speed = std::max(air.airspeed, 1.0);
-  const double bank_limit =
-      std::clamp(limits.max_tilt, Radians(1.0), Radians(60.0));
+  const double bank_limit = StallSafeBank(
+      limits.stall_speed, speed,
+      std::clamp(limits.max_tilt, Radians(1.0), kMaxAutopilotBank));
 
   // Course -> turn rate (positive left, like headings) -> coordinated bank.
   // Turning left means the left wing goes down: negative roll.
@@ -198,9 +215,11 @@ FixedWingCommand WingAutopilot::Update(const FixedWingParams& params,
                  -max_turn, max_turn);
   const double bank = -std::atan(speed * turn_rate / kStandardGravity);
 
-  // Airspeed -> throttle (climbing costs power, so feed the climb forward).
+  // Airspeed -> throttle. The wanted airspeed is what gives the requested
+  // ground velocity in this wind (within limits); climbing costs power, so
+  // the climb is fed forward.
   const double wanted_speed =
-      std::clamp(Length(target.velocity), limits.min_airspeed,
+      std::clamp(Length(target.velocity - wind), limits.min_airspeed,
                  std::max(limits.max_airspeed, limits.min_airspeed));
   double wanted_climb = std::clamp(target.velocity.y, -limits.max_climb_rate,
                                    limits.max_climb_rate);
@@ -233,6 +252,16 @@ FixedWingCommand WingAutopilot::Update(const FixedWingParams& params,
                         climb.Update(wanted_climb - state.velocity.y, 0.0, dt);
   if (air.airspeed < limits.min_airspeed) {
     wanted_pitch -= kStallRecoveryGain * (limits.min_airspeed - air.airspeed);
+  }
+  // Angle-of-attack limit: the nose never rises above the flight path (through
+  // the air) by more than the wing can take, so a stalled wing is flown out
+  // of the stall instead of being held in it.
+  if (air.airspeed > 1e-3) {
+    const double path =
+        std::asin(std::clamp(air.relative_wind.y / air.airspeed, -1.0, 1.0));
+    const double alpha_limit = params.aero.alpha_stall - kAlphaMargin;
+    wanted_pitch =
+        std::min(wanted_pitch, path + alpha_limit * std::cos(attitude.roll));
   }
   wanted_pitch = std::clamp(wanted_pitch, -kMaxWingPitch, kMaxWingPitch);
 

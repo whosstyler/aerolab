@@ -72,6 +72,8 @@ struct WingSim {
   double max_alpha_seen = 0.0;
   double max_beta_seen = 0.0;
   double min_airspeed_seen = 1e9;
+  // Largest bank beyond the stall-safe bank for the airspeed at the time.
+  double max_bank_excess = -1e9;
 
   explicit WingSim(double speed = 14.0) {
     body.position = {0.0, 120.0, 0.0};
@@ -101,6 +103,14 @@ struct WingSim {
       max_alpha_seen = std::max(max_alpha_seen, air.alpha);
       max_beta_seen = std::max(max_beta_seen, std::abs(air.beta));
       min_airspeed_seen = std::min(min_airspeed_seen, air.airspeed);
+      if (limits.stall_speed > 0.0) {
+        const double safe =
+            StallSafeBank(limits.stall_speed, air.airspeed,
+                          std::min(limits.max_tilt, kMaxAutopilotBank));
+        max_bank_excess =
+            std::max(max_bank_excess,
+                     std::abs(AttitudeOf(body.orientation).roll) - safe);
+      }
       ASSERT_TRUE(IsFinite(body.position));
     }
   }
@@ -175,6 +185,22 @@ TEST(QuadControllerTest, HoldsAHeadingWhileHovering) {
   EXPECT_LT(Length(sim.body.velocity), 0.05);
 }
 
+TEST(QuadControllerTest, HoldsAltitudeInThinAir) {
+  QuadSim sim;
+  sim.body.position = {0.0, 4500.0, 0.0};
+  // Rotors spin faster for the same thrust in thin air (thrust ~ density).
+  const double density_ratio =
+      StandardAtmosphere(4500.0).density / kSeaLevelDensity;
+  sim.motors.rotor_speed.fill(HoverRotorSpeed(sim.params) /
+                              std::sqrt(density_ratio));
+  sim.Run({}, 10.0);
+  EXPECT_NEAR(sim.body.position.y, 4500.0, 0.2);
+  EXPECT_LT(Length(sim.body.velocity), 0.02);
+  // Climbing still works up there.
+  sim.Run({.velocity = {0.0, 2.0, 0.0}}, 5.0);
+  EXPECT_NEAR(sim.body.velocity.y, 2.0, 0.1);
+}
+
 TEST(QuadControllerTest, LeansIntoWindToHoldStill) {
   QuadSim sim;
   sim.wind = {4.0, 0.0, 0.0};
@@ -241,6 +267,68 @@ TEST(WingAutopilotTest, ClimbsAndDescendsAtTheRequestedRate) {
   EXPECT_NEAR(sim.body.velocity.y, 2.0, 0.4);
   sim.Run({.velocity = {0.0, -2.0, -15.0}}, 15.0);
   EXPECT_NEAR(sim.body.velocity.y, -2.0, 0.4);
+}
+
+TEST(WingAutopilotTest, SteepBankRequestsStayClearOfTheStall) {
+  WingSim sim(11.0);
+  // Ask for a reversal at a slow speed with a reckless bank limit. Two
+  // protections keep the turn's higher load from stalling the wing: the
+  // bank cap (60 degrees, less near the stall; see StallSafeBank's own
+  // test) and the angle-of-attack limit, which trades height for speed.
+  // Either way the bank stays stall-safe for the airspeed of the moment.
+  sim.limits.max_tilt = Radians(75.0);
+  sim.limits.min_airspeed = 10.0;
+  sim.limits.stall_speed =
+      StallSpeed(sim.params, StandardAtmosphere(120.0).density);
+  sim.Run({.velocity = {0.0, 0.0, 10.0}}, 20.0);
+  EXPECT_LT(sim.max_alpha_seen, sim.params.aero.alpha_stall);
+  // The bank stayed within what is safe at the airspeed of the moment.
+  EXPECT_LT(sim.max_bank_excess, Radians(3.0));
+  EXPECT_LT(sim.max_bank_seen, kMaxAutopilotBank + Radians(2.0));
+  EXPECT_GT(std::abs(Course(sim.body.velocity)), Radians(175.0));  // Reversed.
+}
+
+TEST(WingAutopilotTest, FliesTheAirspeedThatMakesTheGroundSpeedInWind) {
+  WingSim sim;
+  sim.wind = {0.0, 0.0, 8.0};  // A headwind for a wing flying toward -Z.
+  sim.Run({.velocity = {0.0, 0.0, -6.0}}, 30.0);
+  const double airspeed = Length(sim.body.velocity - sim.wind);
+  EXPECT_NEAR(airspeed, 14.0, 0.5);
+  EXPECT_NEAR(-sim.body.velocity.z, 6.0, 0.5);
+  // Downwind it never slows below its minimum airspeed to match (it
+  // starts at 9 m/s through the air: 17 over the ground).
+  WingSim tail(17.0);
+  tail.wind = {0.0, 0.0, -8.0};
+  tail.Run({.velocity = {0.0, 0.0, -10.0}}, 30.0);
+  EXPECT_GT(Length(tail.body.velocity - tail.wind),
+            0.95 * tail.limits.min_airspeed);
+}
+
+TEST(WingAutopilotTest, FliesOutOfAStall) {
+  WingSim sim(6.0);  // Below the 7.6 m/s stall speed...
+  sim.body.orientation = FromEuler(
+      {.yaw = 0.0, .pitch = Radians(15.0), .roll = 0.0});  // ...nose up.
+  sim.Run({.velocity = {0.0, 0.0, -14.0}}, 4.0);
+  const double alpha_after =
+      ComputeAirData(sim.body, sim.wind,
+                     StandardAtmosphere(sim.body.position.y))
+          .alpha;
+  EXPECT_LT(alpha_after, sim.params.aero.alpha_stall);
+  sim.Run({.velocity = {0.0, 0.0, -14.0}}, 16.0);
+  EXPECT_NEAR(Length(sim.body.velocity), 14.0, 1.0);
+  EXPECT_GT(sim.body.position.y,
+            120.0 - 40.0);  // Recovered with height to spare.
+  EXPECT_NEAR(sim.body.velocity.y, 0.0, 0.5);
+}
+
+TEST(WingAutopilotTest, StallSafeBankShrinksNearTheStall) {
+  EXPECT_EQ(StallSafeBank(0.0, 10.0, Radians(45.0)), Radians(45.0));
+  EXPECT_EQ(StallSafeBank(7.6, 30.0, Radians(45.0)), Radians(45.0));
+  const double near_stall = StallSafeBank(7.6, 10.0, Radians(60.0));
+  EXPECT_LT(near_stall, Radians(45.0));
+  EXPECT_GT(near_stall, Radians(30.0));
+  // At or below the margin it still allows a token bank, never NaN.
+  EXPECT_EQ(StallSafeBank(7.6, 7.6, Radians(60.0)), Radians(1.0));
 }
 
 TEST(WingAutopilotTest, KeepsFlyingWhenAskedToGoTooSlowly) {

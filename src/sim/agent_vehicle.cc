@@ -65,7 +65,9 @@ const MassProperties& AirframeMass(FlightStyle style,
 ControlLimits AutopilotLimits(const AgentParams& params,
                               const AgentVehicle& vehicle, double altitude) {
   ControlLimits limits;
-  limits.max_tilt = params.max_tilt;
+  limits.max_tilt = std::min(params.max_tilt, params.style == FlightStyle::kWing
+                                                  ? kMaxAutopilotBank
+                                                  : kMaxAutopilotTilt);
   limits.max_climb_rate = params.max_climb_rate;
   limits.max_acceleration = params.max_acceleration;
   if (params.style == FlightStyle::kWing) {
@@ -73,6 +75,7 @@ ControlLimits AutopilotLimits(const AgentParams& params,
     const double stall =
         SeaLevelStallSpeed(vehicle) *
         std::sqrt(kSeaLevelDensity / StandardAtmosphere(altitude).density);
+    limits.stall_speed = stall;
     limits.min_airspeed = std::max(params.min_speed, kStallMargin * stall);
     limits.max_airspeed = std::max(params.max_speed, limits.min_airspeed);
   } else {
@@ -106,8 +109,23 @@ std::optional<AgentDecision> StepPhysicalAgent(
     const Vec3& wind, double dt, AgentBrain& brain, AgentVehicle& vehicle,
     RigidBodyState& state, Vec3& acceleration) {
   if (!(dt > 0.0) || !std::isfinite(dt)) return std::nullopt;
-  const AgentParams p = SanitizeAgentParams(params);
   const Vec3 air_motion = IsFinite(wind) ? wind : Vec3::Zero();
+  const AgentParams sanitized = SanitizeAgentParams(params);
+  const ControlLimits limits =
+      AutopilotLimits(sanitized, vehicle, state.position.y);
+  // The brain plans within what the autopilot will actually fly: no
+  // steeper bank or tilt and, for wings, no slower than the stall margin,
+  // with the bank the autopilot allows at that speed. The brain plans in
+  // ground speed, which wind swings by up to its own speed around the
+  // airspeed, so turns are planned for the worst (downwind) case.
+  AgentParams p = sanitized;
+  p.max_tilt = limits.max_tilt;
+  if (IsWing(p)) {
+    p.max_tilt =
+        StallSafeBank(limits.stall_speed, limits.min_airspeed, limits.max_tilt);
+    p.min_speed = limits.min_airspeed + HorizontalLength(air_motion);
+    p.max_speed = std::max(p.max_speed, p.min_speed);
+  }
   const std::optional<AgentDecision> decision =
       PlanAgent(p, obstacles, dt, MotionOf(state, acceleration), brain);
 
@@ -121,8 +139,6 @@ std::optional<AgentDecision> StepPhysicalAgent(
     target.heading = NextHoverHeading(p, state.velocity, dt, brain);
     target.hold_heading = true;
   }
-  const ControlLimits limits = AutopilotLimits(p, vehicle, state.position.y);
-
   const Vec3 start_velocity = state.velocity;
   // Counted in double first, so an absurd dt cannot overflow the int.
   const int substeps = static_cast<int>(std::clamp(

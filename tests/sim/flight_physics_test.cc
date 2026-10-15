@@ -116,7 +116,7 @@ TEST(AerodynamicsTest, MomentsHaveTheRightSigns) {
   EXPECT_GT(torque(slipping, {}).z, base.z);
 }
 
-TEST(FixedWingTest, TrimsAtASmallAngleOfAttackWithARealisticLiftToDrag) {
+TEST(FixedWingTest, LevelFlightNeedsLittleAngleOfAttackAndHasARealisticLD) {
   const FixedWingParams plane = GenericTrainer();
   const double weight = plane.mass.mass * kStandardGravity;
   // In level flight lift is vertical and drag horizontal: find the angle

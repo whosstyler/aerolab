@@ -49,8 +49,10 @@ const MassProperties& AirframeMass(FlightStyle style,
 double SeaLevelStallSpeed(const AgentVehicle& vehicle);
 
 // The limits the autopilot flies within: the agent's envelope, narrowed to
-// what the airframe can do (a wing never slower than 1.3 times its stall
-// speed at `altitude`).
+// what the controllers and airframe allow (bank at most kMaxAutopilotBank,
+// tilt at most kMaxAutopilotTilt; a wing never slower than 1.3 times its
+// stall speed at `altitude`, whose value it also carries). StepPhysicalAgent
+// lets the brain plan within the same limits.
 ControlLimits AutopilotLimits(const AgentParams& params,
                               const AgentVehicle& vehicle, double altitude);
 
