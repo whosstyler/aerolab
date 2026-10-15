@@ -64,7 +64,6 @@ enum class MotionType {
   kKinematic,  // Follows a closed-form path; no forces.
 };
 
-// One sample of a body's flight data, recorded at a fixed rate.
 // Why a dynamic body was frozen. A frozen body stays put until reset.
 enum class BodyHalt {
   kNone,
@@ -72,6 +71,7 @@ enum class BodyHalt {
   kOutOfBounds,  // Position or speed passed the simulation bounds.
 };
 
+// One sample of a body's flight data, recorded at a fixed rate.
 struct TelemetrySample {
   double time = 0.0;          // Simulation time, s.
   double speed = 0.0;         // m/s
