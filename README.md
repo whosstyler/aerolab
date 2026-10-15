@@ -1,5 +1,15 @@
 # AeroLab
 
+> **A fully vibe-coded game engine and simulation playground.** Every line
+> was written by an AI coding assistant (Claude Code) from my prompts. I use
+> it to teach myself the serious math behind projectile and flight
+> simulation: rigid-body dynamics, numerical integration and its errors,
+> quaternion rotation, drag, lift and ballistic arcs, orbital motion,
+> coordinate frames, steering behaviours, and how a real-time engine is put
+> together. These are the same fundamentals that professional aerospace and
+> defense-grade simulations are built on, explored here with generic objects
+> and deliberately simple models.
+
 AeroLab is a small, purpose-built **3D simulation engine and editor** for
 learning the mathematics, physics, graphics programming and software
 architecture behind fast-moving aerial objects. It is written from the
@@ -216,6 +226,17 @@ coordinate conventions, frame anatomy and design notes.
   obstacle across many seeds. Obstacles are bounding spheres: a long
   thin prop becomes a large keep-out volume, and one big enough to engulf
   an agent's whole flight area is ignored by that agent.
+
+## How it was built
+
+The whole project was vibe coded: written end to end by Claude Code from my
+prompts (a written spec, then follow-up requests), in ten planned stages
+plus features added afterwards (autonomous flight AI, first-person camera).
+Every code change was checked by automated review agents before it was
+committed, and the code is covered by about 300 unit tests, sanitizer
+builds (ASan and UBSan) and smoke tests that run the editor headless (these
+need a GPU). See `git log` for the full history, including what the reviews
+found and how it was fixed.
 
 ## Third-party components
 
