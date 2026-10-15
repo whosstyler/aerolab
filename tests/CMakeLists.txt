@@ -28,6 +28,11 @@ aerolab_add_test(core_test
     core/log_test.cc
   DEPS aerolab_core)
 
+aerolab_add_test(geometry_test
+  SOURCES
+    geometry/geometry_test.cc
+  DEPS aerolab_geometry)
+
 aerolab_add_test(app_options_test
   SOURCES
     app/options_test.cc

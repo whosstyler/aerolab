@@ -23,6 +23,14 @@ aerolab_add_library(aerolab_core
     core/clock.cc
     core/log.cc)
 
+aerolab_add_library(aerolab_geometry
+  SOURCES
+    geometry/debug_draw.cc
+    geometry/mesh_data.cc
+    geometry/mesh_library.cc
+    geometry/primitives.cc
+  DEPS aerolab_math)
+
 # Command-line parsing has no platform dependencies, so it is always built
 # and unit tested, even in test-only configurations.
 aerolab_add_library(aerolab_app_options
@@ -33,8 +41,13 @@ if(AEROLAB_BUILD_APP)
   aerolab_add_library(aerolab_render
     SOURCES
       render/gl.cc
+      render/gpu_mesh.cc
       render/readback.cc
-    DEPS aerolab_math aerolab_core)
+      render/render_target.cc
+      render/renderer.cc
+      render/shader.cc
+      render/shader_sources.cc
+    DEPS aerolab_math aerolab_core aerolab_geometry)
 
   add_executable(aerolab
     app/main.cc
