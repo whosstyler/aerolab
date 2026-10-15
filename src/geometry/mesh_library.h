@@ -24,6 +24,7 @@ enum class MeshKind {
   kFixedWing,  // Small fixed-wing airframe, ~2.4 m wingspan.
   kQuadrotor,  // Multirotor frame (rotors are separate child objects).
   kRotor,      // Two-blade rotor disc, spins about local +Y.
+  kObserver,   // Human-scale figure, ~1.7 m tall, feet at the origin.
   kCount,
 };
 

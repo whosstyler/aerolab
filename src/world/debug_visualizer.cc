@@ -205,11 +205,12 @@ std::vector<Vec3> PredictTrajectory(
 
 void AddDebugVisualization(const Scene& scene, const DebugViewOptions& options,
                            double alpha, EntityId selected,
-                           DebugDrawList& lines) {
+                           DebugDrawList& lines, EntityId hidden) {
   if (options.world_axes) lines.AddAxes(Mat4::Identity(), 2.0);
 
   scene.ForEachEntity([&](EntityId id, const Entity& entity_ref) {
     const Entity* entity = &entity_ref;
+    if (IsSet(hidden) && scene.IsAncestorOrSelf(hidden, id)) return;
     const Mat4 world = RenderWorldMatrix(scene, id, alpha);
     const Vec3 position = world.TranslationPart();
 

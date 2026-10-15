@@ -19,6 +19,7 @@ enum class Archetype {
   kDart,
   kFixedWing,
   kQuadrotor,
+  kObserver,  // A standing figure to look through in first person.
   kCount,
 };
 

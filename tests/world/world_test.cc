@@ -2,12 +2,18 @@
 
 #include <optional>
 
+#include "geometry/debug_draw.h"
+#include "geometry/mesh_library.h"
+#include "math/aabb.h"
+#include "math/quat.h"
 #include "math/ray.h"
 #include "scene/scene.h"
 #include "test_util.h"
 #include "world/animation.h"
+#include "world/debug_visualizer.h"
 #include "world/picking.h"
 #include "world/spawner.h"
+#include "world/viewpoint.h"
 
 namespace aerolab {
 namespace {
@@ -78,6 +84,73 @@ TEST(PickingTest, RayStartingInsideAnObjectHitsIt) {
   ASSERT_TRUE(hit.has_value());
   EXPECT_EQ(hit->entity, cube);
   EXPECT_EQ(hit->distance, 0.0);
+}
+
+TEST(PickingTest, IgnoredEntityIsSeenThrough) {
+  Scene scene;
+  // The camera stands inside an observer figure looking at a cube.
+  const EntityId observer = Spawn(scene, Archetype::kObserver, {0, 0, 0});
+  const EntityId cube = Spawn(scene, Archetype::kCube, {0, 1.6, -6});
+  const Ray look{{0.0, 1.6, 0.0}, -Vec3::UnitZ()};
+  ASSERT_EQ(PickEntity(scene, look)->entity, observer);  // Blocks the view.
+  const std::optional<PickHit> hit = PickEntity(scene, look, 1.0, observer);
+  ASSERT_TRUE(hit.has_value());
+  EXPECT_EQ(hit->entity, cube);
+}
+
+TEST(SpawnerTest, ObserverStandsOnTheGroundAtHumanScale) {
+  Scene scene;
+  const EntityId id = Spawn(scene, Archetype::kObserver, {3, 0, 4});
+  const Entity* observer = scene.Get(id);
+  ASSERT_TRUE(observer->render.has_value());
+  EXPECT_EQ(observer->render->mesh, MeshKind::kObserver);
+  EXPECT_FALSE(observer->body.has_value());
+  const Aabb& bounds = MeshLocalBounds(MeshKind::kObserver);
+  EXPECT_NEAR(bounds.min.y, 0.0, 1e-6);  // Feet at the origin (floats).
+  EXPECT_GT(bounds.max.y, 1.6);          // About as tall as a person.
+  EXPECT_LT(bounds.max.y, 1.9);
+  EXPECT_LT(bounds.min.z, -0.1);  // The visor sticks out at the front.
+}
+
+TEST(DebugVisualizationTest, HiddenObserverGetsNoOverlays) {
+  Scene scene;
+  const EntityId observer = Spawn(scene, Archetype::kObserver, {0, 0, 0});
+  DebugViewOptions options;
+  options.world_axes = false;
+  options.bounding_boxes = true;
+  DebugDrawList shown;
+  AddDebugVisualization(scene, options, 1.0, kNoEntity, shown);
+  EXPECT_GT(shown.segment_count(), 0u);  // Its bounding box.
+  DebugDrawList hidden;
+  AddDebugVisualization(scene, options, 1.0, kNoEntity, hidden, observer);
+  EXPECT_EQ(hidden.segment_count(), 0u);
+}
+
+TEST(ViewpointSyncTest, NoticesOnlyOutsideEditsToTheObserver) {
+  Scene scene;
+  const EntityId observer = Spawn(scene, Archetype::kObserver, {1, 0, 2});
+  ViewpointSync sync;
+  RecordViewpointSync(scene, observer, sync);
+  EXPECT_FALSE(ObserverMovedSinceSync(scene, observer, sync));
+  // An inspector-style edit of its own transform is noticed.
+  scene.Get(observer)->local.position.x += 0.5;
+  EXPECT_TRUE(ObserverMovedSinceSync(scene, observer, sync));
+  // A different observer was never recorded.
+  const EntityId other = Spawn(scene, Archetype::kObserver, {5, 0, 5});
+  EXPECT_FALSE(ObserverMovedSinceSync(scene, other, sync));
+}
+
+TEST(ViewpointSyncTest, MovingOrStretchedParentIsNotAnEdit) {
+  Scene scene;
+  const EntityId base = Spawn(scene, Archetype::kCube, {0, 0, 0});
+  scene.Get(base)->local.scale = {2.0, 1.0, 1.0};  // Non-uniform.
+  const EntityId observer = Spawn(scene, Archetype::kObserver, {0, 0, 0});
+  ASSERT_TRUE(scene.SetParent(observer, base));
+  scene.SetWorldPose(observer, {3, 0, 1}, FromEuler({.yaw = 0.5}));
+  ViewpointSync sync;
+  RecordViewpointSync(scene, observer, sync);
+  scene.Get(base)->local.position += Vec3{4.0, 0.0, 0.0};  // Parent moves.
+  EXPECT_FALSE(ObserverMovedSinceSync(scene, observer, sync));
 }
 
 TEST(AnimationTest, SpinnersRotateAboutTheirLocalAxis) {

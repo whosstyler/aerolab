@@ -9,11 +9,12 @@
 namespace aerolab {
 
 std::optional<PickHit> PickEntity(const Scene& scene, const Ray& ray,
-                                  double alpha) {
+                                  double alpha, EntityId hidden) {
   std::optional<PickHit> best;
   scene.ForEachEntity([&](EntityId id, const Entity& entity_ref) {
     const Entity* entity = &entity_ref;
     if (!entity->render.has_value() || !entity->render->visible) return;
+    if (IsSet(hidden) && scene.IsAncestorOrSelf(hidden, id)) return;
     const std::optional<double> t =
         IntersectRayOrientedBox(ray, MeshLocalBounds(entity->render->mesh),
                                 RenderWorldMatrix(scene, id, alpha));

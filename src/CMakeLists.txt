@@ -66,6 +66,7 @@ aerolab_add_library(aerolab_world
     world/presets.cc
     world/simulation.cc
     world/spawner.cc
+    world/viewpoint.cc
   DEPS aerolab_scene aerolab_sim aerolab_geometry aerolab_core aerolab_math)
 
 # Command-line parsing has no platform dependencies, so it is always built

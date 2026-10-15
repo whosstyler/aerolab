@@ -120,6 +120,26 @@ MeshData BuildRotor() {
   return builder.Build();
 }
 
+// A simple standing figure for first-person viewpoints: feet at the origin,
+// facing -Z, eyes at about 1.65 m. The visor shows which way it faces.
+MeshData BuildObserver() {
+  const MeshData leg = MakeCylinder(0.07, 0.42, 16);
+  const MeshData arm = MakeCylinder(0.05, 0.3, 12);
+  const MeshData torso = MakeBox({0.19, 0.29, 0.11});
+  const MeshData head = MakeUvSphere(0.12, 20, 10);
+  const MeshData visor = MakeBox({0.09, 0.03, 0.03});
+  const Color clothes = FromHex(0x2563EB);
+  MeshBuilder builder;
+  for (double side : {-1.0, 1.0}) {
+    builder.Append(leg, Place({0.09 * side, 0.42, 0.0}), FromHex(0x334155));
+    builder.Append(arm, Place({0.25 * side, 1.1, 0.0}), clothes);
+  }
+  builder.Append(torso, Place({0.0, 1.13, 0.0}), clothes);
+  builder.Append(head, Place({0.0, 1.58, 0.0}), FromHex(0xD6C3A5));
+  builder.Append(visor, Place({0.0, 1.6, -0.11}), FromHex(0xF59E0B));
+  return builder.Build();
+}
+
 }  // namespace
 
 std::string_view MeshKindName(MeshKind kind) {
@@ -140,6 +160,8 @@ std::string_view MeshKindName(MeshKind kind) {
       return "Quadrotor";
     case MeshKind::kRotor:
       return "Rotor";
+    case MeshKind::kObserver:
+      return "Observer";
     case MeshKind::kCount:
       break;
   }
@@ -177,6 +199,8 @@ MeshData BuildMesh(MeshKind kind) {
       return BuildQuadrotor();
     case MeshKind::kRotor:
       return BuildRotor();
+    case MeshKind::kObserver:
+      return BuildObserver();
     case MeshKind::kCount:
       break;
   }

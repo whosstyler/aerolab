@@ -20,9 +20,11 @@ struct PickHit {
 // returns the nearest hit. Hits on parts marked `pick_parent` resolve to the
 // part's parent so clicking a rotor selects the whole vehicle. Objects are
 // tested at their rendered pose (`alpha`, see RenderWorldMatrix) so picks
-// match what is on screen.
+// match what is on screen. `hidden` and its descendants are skipped (the
+// observer the camera is looking through).
 std::optional<PickHit> PickEntity(const Scene& scene, const Ray& ray,
-                                  double alpha = 1.0);
+                                  double alpha = 1.0,
+                                  EntityId hidden = kNoEntity);
 
 }  // namespace aerolab
 

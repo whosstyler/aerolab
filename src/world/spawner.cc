@@ -68,6 +68,8 @@ std::string_view ArchetypeName(Archetype archetype) {
       return "Fixed wing";
     case Archetype::kQuadrotor:
       return "Quadrotor";
+    case Archetype::kObserver:
+      return "Observer";
     case Archetype::kCount:
       break;
   }
@@ -95,6 +97,9 @@ EntityId Spawn(Scene& scene, Archetype archetype, const Vec3& position,
     case Archetype::kQuadrotor:
       entity->render = MakeRender(MeshKind::kQuadrotor, colors::kWhite);
       AddRotors(scene, id);
+      break;
+    case Archetype::kObserver:
+      entity->render = MakeRender(MeshKind::kObserver, colors::kWhite);
       break;
     case Archetype::kCount:
       break;

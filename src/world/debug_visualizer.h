@@ -51,10 +51,11 @@ std::vector<Vec3> PredictTrajectory(
 
 // Appends the enabled debug layers for the whole scene. Body positions use
 // the same interpolation (`alpha`) as rendering, so lines stay attached to
-// the drawn objects.
+// the drawn objects. `hidden` and its descendants get no overlays (the
+// observer the camera is looking through).
 void AddDebugVisualization(const Scene& scene, const DebugViewOptions& options,
                            double alpha, EntityId selected,
-                           DebugDrawList& lines);
+                           DebugDrawList& lines, EntityId hidden = kNoEntity);
 
 }  // namespace aerolab
 

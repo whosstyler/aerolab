@@ -13,6 +13,13 @@ struct SelectionState {
   EntityId hovered;
 };
 
+// The observer, if any, that the first-person camera is looking through.
+// While in use its figure is hidden from its own view and ignored by
+// picking, and it follows the camera around.
+struct ViewpointState {
+  EntityId observer;
+};
+
 }  // namespace aerolab
 
 #endif  // AEROLAB_WORLD_SELECTION_H_
