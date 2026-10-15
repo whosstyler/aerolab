@@ -290,9 +290,8 @@ void MultiLinePlot(const char* id, std::span<const PlotSeries> series,
                         IM_COL32(20, 22, 25, 200), 2.0f);
     draw->AddText(ImVec2(left + 2, y), theme::kTextDim, text.c_str());
   };
-  axis_label(top, top_label);
-  axis_label(bottom - ImGui::GetTextLineHeight(), bottom_label);
   float legend_y = top;
+  float legend_left = right;  // Left edge of the first legend row.
   for (const PlotSeries& s : series) {
     float latest = std::numeric_limits<float>::quiet_NaN();
     for (std::size_t i = s.values.size(); i-- > 0;) {
@@ -313,8 +312,15 @@ void MultiLinePlot(const char* id, std::span<const PlotSeries> series,
     draw->AddRectFilled(ImVec2(x - 14, legend_y + 4),
                         ImVec2(x - 6, legend_y + 12), s.color, 2.0f);
     draw->AddText(ImVec2(x, legend_y), theme::kText, label.c_str());
+    if (legend_y == top) legend_left = x - 18;
     legend_y += ImGui::GetTextLineHeight();
   }
+  // The top label moves below the legend when the plot is too narrow for
+  // both on one line.
+  const float top_label_right =
+      left + ImGui::CalcTextSize(top_label.c_str()).x + 8;
+  axis_label(top_label_right < legend_left ? top : legend_y, top_label);
+  axis_label(bottom - ImGui::GetTextLineHeight(), bottom_label);
   ImGui::PopID();
 }
 
