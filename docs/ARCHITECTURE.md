@@ -190,6 +190,16 @@ rotation. Divergence (a non-finite state) and runaway states past the
 simulation bounds are detected per body; the body is frozen (`BodyHalt`)
 until the next reset instead of spreading NaNs or float overflow.
 
+**First person.** `CameraRig` walks on the ground plane in first person
+and is told what it may not walk through as `WalkBlocker` circles; the
+app derives them each frame from the same bounding spheres the agents
+sense (`WalkBlockerFromSphere` keeps only spheres within body height).
+`ViewpointState` (world/selection.h, owned by the application) names the
+observer being looked through: the app moves that figure with the camera
+(and moves the camera if something else moves the figure, such as an
+inspector edit) and leaves it out of rendering, the selection and debug
+overlays, labels and picking.
+
 **Autonomous agents.** `sim/flight_agent` is pure decision and motion
 logic with no scene types: `StepAgent(params, obstacles, dt, brain,
 motion)`. `world/autonomy` is the sensing side: it turns the scene into

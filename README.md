@@ -18,9 +18,18 @@ interception logic anywhere in the code base.
 ## Features
 
 **3D viewport (the centrepiece)**
-* Perspective camera with **orbit**, **free-fly** and **follow** modes,
-  frame-rate independent movement, smooth focus, exponential zoom and
-  pixel-accurate panning.
+* Perspective camera with **orbit**, **free-fly**, **follow** and
+  **first person** modes, frame-rate independent movement, smooth focus,
+  exponential zoom and pixel-accurate panning.
+* **First person on the ground:** place an *Observer* (Scene > Spawn >
+  Observer, or key 4 / the *First person* button when none exists yet)
+  where you are looking and see the scene through its eyes at 1.65 m. Key
+  4 returns to the selected or last-used observer. In first person WASD
+  walks, Shift runs, Ctrl creeps, right-drag looks, the wheel sets walking
+  speed (shown in the HUD) and F turns to face the selection. You cannot
+  walk through objects, and the figure walks with you, so other camera
+  modes show where you are standing; moving the figure in the inspector
+  moves you.
 * Gradient sky with a visible horizon, an analytically anti-aliased infinite
   world grid with X/Z axis lines, directional sun with Blinn-Phong materials
   and hemispheric ambient light, distance fog, blob shadows, 4x MSAA.
@@ -123,6 +132,7 @@ which must be on `PATH`.
 | `--frames N` | Exit after N frames (smoke testing) |
 | `--screenshot PATH` | Save the final frame as PNG (needs `--frames`) |
 | `--select NAME` | Select and follow an object at startup |
+| `--first-person` | Start looking through an observer on the ground (with `--select`, turn to face the object instead of following it) |
 | `--hidden` | Do not show the window |
 | `--no-vsync` | Disable vertical sync |
 
@@ -134,12 +144,13 @@ Example: `aerolab --frames 300 --select Glider --screenshot glider.png`.
 |---|---|
 | Right drag | Orbit / look around |
 | Middle drag | Pan |
-| Wheel | Zoom (orbit) or cruise speed (free-fly) |
+| Wheel | Zoom (orbit) or speed (free-fly, first person) |
 | W A S D, Q E | Move (free-fly) or slide the pivot (orbit) |
-| Shift / Ctrl | Faster / slower |
+| W A S D | Walk (first person) |
+| Shift / Ctrl | Faster / slower (run / creep) |
 | Left click | Select (click empty space to deselect) |
 | F | Focus the selection |
-| 1 / 2 / 3 | Free-fly / orbit / follow camera |
+| 1 / 2 / 3 / 4 | Free-fly / orbit / follow / first person |
 | Space, `.`, R | Play/pause, single step, reset |
 | Delete, Esc | Remove selection, clear selection |
 | F1 | Controls overlay |
@@ -172,7 +183,7 @@ coordinate conventions, frame anatomy and design notes.
 | `src/core` | Logging, timing, fixed timestep, input, ring buffer, stats |
 | `src/geometry` | Procedural meshes, mesh library, debug line lists |
 | `src/sim` | Rigid-body state, force model, integrators, kinematic paths, flight agents |
-| `src/camera` | Camera and the free-fly/orbit/follow rig |
+| `src/camera` | Camera and the free-fly/orbit/follow/first-person rig |
 | `src/scene` | Entities, generational handles, transform hierarchy |
 | `src/world` | Simulation system, agent sensing, presets, picking, debug visualization |
 | `src/render` | OpenGL 3.3 loader, shaders, meshes, MSAA target, renderer |
