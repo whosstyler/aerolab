@@ -21,6 +21,7 @@ aerolab_add_library(aerolab_math
 aerolab_add_library(aerolab_core
   SOURCES
     core/clock.cc
+    core/fixed_timestep.cc
     core/input.cc
     core/log.cc
   DEPS aerolab_math)
@@ -31,6 +32,14 @@ aerolab_add_library(aerolab_geometry
     geometry/mesh_data.cc
     geometry/mesh_library.cc
     geometry/primitives.cc
+  DEPS aerolab_math)
+
+aerolab_add_library(aerolab_sim
+  SOURCES
+    sim/force_model.cc
+    sim/integrator.cc
+    sim/kinematic_path.cc
+    sim/rigid_body.cc
   DEPS aerolab_math)
 
 aerolab_add_library(aerolab_camera

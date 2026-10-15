@@ -25,6 +25,7 @@ aerolab_add_test(math_test
 aerolab_add_test(core_test
   SOURCES
     core/clock_test.cc
+    core/fixed_timestep_test.cc
     core/input_test.cc
     core/log_test.cc
   DEPS aerolab_core)
@@ -33,6 +34,12 @@ aerolab_add_test(geometry_test
   SOURCES
     geometry/geometry_test.cc
   DEPS aerolab_geometry)
+
+aerolab_add_test(sim_test
+  SOURCES
+    sim/force_model_test.cc
+    sim/integrator_test.cc
+  DEPS aerolab_sim)
 
 aerolab_add_test(camera_test
   SOURCES
