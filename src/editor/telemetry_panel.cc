@@ -109,13 +109,6 @@ void Channel(const BodyComponent& body, Getter getter,
   }
 }
 
-std::vector<float>& Scratch(EditorState& state, std::size_t index) {
-  if (state.plot_scratch.size() <= index) {
-    state.plot_scratch.resize(index + 1);
-  }
-  return state.plot_scratch[index];
-}
-
 void DrawBodyPlots(const Entity& entity, EditorState& state) {
   const BodyComponent& body = *entity.body;
   const ImU32 color = entity.trail.has_value() ? ToImColor(entity.trail->color)
@@ -127,10 +120,10 @@ void DrawBodyPlots(const Entity& entity, EditorState& state) {
     const PlotSeries series{title, values, color};
     MultiLinePlot(title, std::span<const PlotSeries>(&series, 1), height, unit);
   };
-  std::vector<float>& speed = Scratch(state, 0);
-  std::vector<float>& altitude = Scratch(state, 1);
-  std::vector<float>& acceleration = Scratch(state, 2);
-  std::vector<float>& energy = Scratch(state, 3);
+  std::vector<float>& speed = state.body_plot_scratch[0];
+  std::vector<float>& altitude = state.body_plot_scratch[1];
+  std::vector<float>& acceleration = state.body_plot_scratch[2];
+  std::vector<float>& energy = state.body_plot_scratch[3];
   Channel(body, [](const TelemetrySample& s) { return s.speed; }, speed);
   Channel(body, [](const TelemetrySample& s) { return s.altitude; }, altitude);
   Channel(
@@ -159,6 +152,10 @@ void DrawBodyPlots(const Entity& entity, EditorState& state) {
 // integrators (or any set of bodies) on one chart.
 void DrawGroupPlots(const Scene& scene, const Entity& group,
                     EditorState& state) {
+  // Size the scratch before taking references so none can dangle.
+  if (state.group_plot_scratch.size() < group.children.size()) {
+    state.group_plot_scratch.resize(group.children.size());
+  }
   std::vector<PlotSeries> series;
   std::size_t used = 0;
   for (EntityId child : group.children) {
@@ -169,7 +166,7 @@ void DrawGroupPlots(const Scene& scene, const Entity& group,
     }
     const BodyComponent& body = *entity->body;
     const double e0 = body.telemetry[0].energy;
-    std::vector<float>& drift = Scratch(state, used++);
+    std::vector<float>& drift = state.group_plot_scratch[used++];
     Channel(
         body,
         [e0](const TelemetrySample& s) {

@@ -40,8 +40,7 @@ void DrawPerformancePanel(EditorFrame& frame, EditorState& state,
 
   // Frame-time graph (reuses a scratch buffer instead of allocating).
   const RingBuffer<float>& history = stats.history(FrameTiming::kFrame);
-  if (state.plot_scratch.empty()) state.plot_scratch.resize(1);
-  std::vector<float>& values = state.plot_scratch[0];
+  std::vector<float>& values = state.frame_time_scratch;
   values.clear();
   for (std::size_t i = 0; i < history.size(); ++i) values.push_back(history[i]);
   const PlotSeries series{"frame ms", values, theme::kAccent};

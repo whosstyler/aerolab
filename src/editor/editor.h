@@ -1,6 +1,7 @@
 #ifndef AEROLAB_EDITOR_EDITOR_H_
 #define AEROLAB_EDITOR_EDITOR_H_
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <string>
@@ -85,7 +86,11 @@ struct EditorState {
   bool hierarchy_filter_changed = false;
 
   // Reused per-frame scratch for plots, to avoid reallocating every frame.
-  std::vector<std::vector<float>> plot_scratch;
+  // Fixed-size containers: references into them stay valid while a panel
+  // fills several series.
+  std::array<std::vector<float>, 4> body_plot_scratch;
+  std::vector<std::vector<float>> group_plot_scratch;  // Sized up front.
+  std::vector<float> frame_time_scratch;
 };
 
 // The editor shell: menu bar, toolbar, docking layout and every panel.
