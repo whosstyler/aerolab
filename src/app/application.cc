@@ -154,8 +154,9 @@ void Application::ProcessEvents() {
 }
 
 void Application::RunFrame(double frame_dt) {
-  UpdateCamera(frame_dt);
+  // Simulation first, so the follow camera tracks the pose drawn this frame.
   UpdateSimulation(frame_dt);
+  UpdateCamera(frame_dt);
   RenderScene();
   RenderUi();
 }
