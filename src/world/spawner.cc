@@ -46,8 +46,11 @@ void AddRotors(Scene& scene, EntityId frame) {
     render.pick_parent = true;
     entity->render = render;
     // Diagonal rotors counter-rotate, as on a real multirotor.
-    entity->spin =
-        SpinComponent{Vec3::UnitY(), (i % 2 == 0 ? 1.0 : -1.0) * kTwoPi * 6.0};
+    SpinComponent spin;
+    spin.axis = Vec3::UnitY();
+    spin.rate = (i % 2 == 0 ? 1.0 : -1.0) * kTwoPi * 6.0;
+    spin.rest_rotation = entity->local.rotation;
+    entity->spin = spin;
   }
 }
 

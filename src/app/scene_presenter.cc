@@ -7,6 +7,7 @@
 #include "geometry/mesh_library.h"
 #include "math/aabb.h"
 #include "math/mat4.h"
+#include "world/simulation.h"
 
 namespace aerolab {
 namespace {
@@ -19,7 +20,8 @@ bool InSubtree(const Scene& scene, EntityId root, EntityId id) {
 }  // namespace
 
 std::vector<RenderItem> BuildRenderItems(const Scene& scene,
-                                         const SelectionState& selection) {
+                                         const SelectionState& selection,
+                                         double alpha) {
   std::vector<RenderItem> items;
   items.reserve(scene.size());
   for (EntityId id : scene.AllEntities()) {
@@ -27,7 +29,7 @@ std::vector<RenderItem> BuildRenderItems(const Scene& scene,
     if (!entity->render.has_value() || !entity->render->visible) continue;
     RenderItem item;
     item.mesh = entity->render->mesh;
-    item.model = scene.WorldMatrix(id);
+    item.model = RenderWorldMatrix(scene, id, alpha);
     item.material = entity->render->material;
     item.cast_shadow = entity->render->cast_shadow;
     if (InSubtree(scene, selection.selected, id)) {
@@ -43,17 +45,17 @@ std::vector<RenderItem> BuildRenderItems(const Scene& scene,
 }
 
 void AddSelectionOverlay(const Scene& scene, const SelectionState& selection,
-                         DebugDrawList& lines) {
+                         DebugDrawList& lines, double alpha) {
   if (const Entity* hovered = scene.Get(selection.hovered);
       hovered != nullptr && hovered->render.has_value() &&
       selection.hovered != selection.selected) {
     lines.AddOrientedBox(MeshLocalBounds(hovered->render->mesh),
-                         scene.WorldMatrix(selection.hovered),
+                         RenderWorldMatrix(scene, selection.hovered, alpha),
                          WithAlpha(colors::kHover, 0.6f));
   }
   const Entity* selected = scene.Get(selection.selected);
   if (selected == nullptr) return;
-  const Mat4 world = scene.WorldMatrix(selection.selected);
+  const Mat4 world = RenderWorldMatrix(scene, selection.selected, alpha);
   double frame_size = 1.0;
   if (selected->render.has_value()) {
     const Aabb& bounds = MeshLocalBounds(selected->render->mesh);

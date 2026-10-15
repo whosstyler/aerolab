@@ -51,14 +51,17 @@ aerolab_add_library(aerolab_camera
 aerolab_add_library(aerolab_scene
   SOURCES
     scene/scene.cc
-  DEPS aerolab_math aerolab_core aerolab_geometry)
+  DEPS aerolab_math aerolab_core aerolab_geometry aerolab_sim)
 
 aerolab_add_library(aerolab_world
   SOURCES
     world/animation.cc
+    world/debug_visualizer.cc
     world/picking.cc
+    world/presets.cc
+    world/simulation.cc
     world/spawner.cc
-  DEPS aerolab_scene aerolab_geometry aerolab_math)
+  DEPS aerolab_scene aerolab_sim aerolab_geometry aerolab_core aerolab_math)
 
 # Command-line parsing has no platform dependencies, so it is always built
 # and unit tested, even in test-only configurations.

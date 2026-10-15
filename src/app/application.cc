@@ -23,9 +23,10 @@
 #include "render/gl.h"
 #include "render/readback.h"
 #include "scene/entity.h"
-#include "world/animation.h"
+#include "world/debug_visualizer.h"
 #include "world/picking.h"
-#include "world/spawner.h"
+#include "world/presets.h"
+#include "world/simulation.h"
 
 namespace aerolab {
 namespace {
@@ -78,14 +79,10 @@ bool Application::Initialize() {
 }
 
 void Application::BuildDefaultScene() {
-  Spawn(scene_, Archetype::kCube, {-6.0, 0.5, 0.0});
-  Spawn(scene_, Archetype::kSphere, {-3.5, 0.5, 0.0});
-  Spawn(scene_, Archetype::kDart, {3.0, 2.5, 0.0},
-        FromEuler({.yaw = 0.6, .pitch = 0.35, .roll = 0.0}));
-  Spawn(scene_, Archetype::kFixedWing, {0.0, 5.0, -6.0},
-        FromEuler({.yaw = -0.4, .pitch = 0.0, .roll = 0.3}));
-  Spawn(scene_, Archetype::kQuadrotor, {-3.0, 3.0, -3.0});
-  camera_rig_.LookAt({12.0, 6.0, 14.0}, {-0.5, 2.0, -2.0});
+  BuildDemoScene(scene_);
+  camera_rig_.LookAt({70.0, 38.0, 85.0}, {0.0, 12.0, 0.0});
+  LogInfo("Demo scene: {} entities. Space = play/pause, . = step, R = reset",
+          scene_.size());
 }
 
 int Application::Run() {
@@ -121,7 +118,10 @@ void Application::ProcessEvents() {
 void Application::RunFrame(double frame_dt) {
   HandleShortcuts();
   UpdateCamera(frame_dt);
-  AdvanceSpinners(scene_, frame_dt);
+  simulation_.Update(scene_, frame_dt);
+  for (const SimulationEvent& event : simulation_.TakeEvents()) {
+    LogInfo("[t={:.2f}s] {}", event.time, event.message);
+  }
   UpdatePicking();
   Render();
 }
@@ -130,10 +130,18 @@ void Application::HandleShortcuts() {
   if (input_.WasPressed(Key::k1)) camera_rig_.SetMode(CameraMode::kFreeFly);
   if (input_.WasPressed(Key::k2)) camera_rig_.SetMode(CameraMode::kOrbit);
   if (input_.WasPressed(Key::k3)) camera_rig_.SetMode(CameraMode::kFollow);
+  if (input_.WasPressed(Key::kSpace)) {
+    simulation_.set_paused(!simulation_.paused());
+  }
+  if (input_.WasPressed(Key::kPeriod)) {
+    simulation_.set_paused(true);
+    simulation_.StepOnce(scene_);
+  }
+  if (input_.WasPressed(Key::kR)) simulation_.Reset(scene_);
   if (input_.WasPressed(Key::kEscape)) selection_.selected = kNoEntity;
   if (input_.WasPressed(Key::kF)) {
-    if (const std::optional<Aabb> bounds =
-            scene_.WorldBounds(selection_.selected)) {
+    if (const std::optional<Aabb> bounds = RenderWorldBounds(
+            scene_, selection_.selected, simulation_.alpha())) {
       camera_rig_.Focus(Center(*bounds), BoundingRadius(*bounds));
     }
   }
@@ -157,8 +165,10 @@ void Application::UpdateCamera(double frame_dt) {
                            static_cast<double>(window_->pixel_height()),
                            SDL_GetWindowPixelDensity(window_->handle()));
   std::optional<Vec3> follow_target;
+  // Track the pose that is actually drawn, so the view does not jitter
+  // against the interpolated body.
   if (const std::optional<Aabb> bounds =
-          scene_.WorldBounds(selection_.selected)) {
+          RenderWorldBounds(scene_, selection_.selected, simulation_.alpha())) {
     follow_target = Center(*bounds);
   }
   camera_rig_.Update(camera_input, frame_dt, follow_target);
@@ -186,7 +196,8 @@ void Application::UpdatePicking() {
   const ScreenRect rect{0.0, 0.0, static_cast<double>(width),
                         static_cast<double>(height)};
   const Ray ray = ScreenToWorldRay(*inverse, input_.mouse_position(), rect);
-  const std::optional<PickHit> hit = PickEntity(scene_, ray);
+  const std::optional<PickHit> hit =
+      PickEntity(scene_, ray, simulation_.alpha());
   selection_.hovered = hit.has_value() ? hit->entity : kNoEntity;
 
   if (clicked) {
@@ -219,11 +230,14 @@ void Application::Render() {
     return;
   }
 
-  render_items_ = BuildRenderItems(scene_, selection_);
+  const double alpha = simulation_.alpha();
+  debug_options_.prediction_step = simulation_.fixed_step();
+  render_items_ = BuildRenderItems(scene_, selection_, alpha);
   world_lines_.Clear();
   overlay_lines_.Clear();
-  world_lines_.AddAxes(Mat4::Identity(), 2.0);
-  AddSelectionOverlay(scene_, selection_, overlay_lines_);
+  AddDebugVisualization(scene_, debug_options_, alpha, selection_.selected,
+                        world_lines_);
+  AddSelectionOverlay(scene_, selection_, overlay_lines_, alpha);
 
   viewport_target_.BindForDrawing();
   renderer_->Render(MakeRenderView(width, height), render_items_, world_lines_,

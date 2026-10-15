@@ -93,6 +93,20 @@ TEST(AnimationTest, SpinnersRotateAboutTheirLocalAxis) {
                        1e-15);
 }
 
+TEST(AnimationTest, SpinInterpolatesAndResets) {
+  Scene scene;
+  const EntityId quad = Spawn(scene, Archetype::kQuadrotor, Vec3::Zero());
+  const EntityId rotor = scene.Get(quad)->children[0];
+  const SpinComponent& spin = *scene.Get(rotor)->spin;
+  AdvanceSpinners(scene, 0.01);
+  EXPECT_SAME_ROTATION(InterpolatedSpinRotation(spin, 0.5),
+                       FromAxisAngle(Vec3::UnitY(), spin.rate * 0.005), 1e-12);
+  ResetSpinners(scene);
+  EXPECT_EQ(scene.Get(rotor)->spin->angle, 0.0);
+  EXPECT_SAME_ROTATION(scene.Get(rotor)->local.rotation, Quat::Identity(),
+                       1e-15);
+}
+
 TEST(PickingTest, RotorHitsSelectTheVehicle) {
   Scene scene;
   const EntityId quad = Spawn(scene, Archetype::kQuadrotor, {0, 0, 0});

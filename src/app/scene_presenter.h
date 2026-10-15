@@ -7,24 +7,22 @@
 #include "render/render_types.h"
 #include "scene/entity.h"
 #include "scene/scene.h"
+#include "world/selection.h"
 
 namespace aerolab {
 
-struct SelectionState {
-  EntityId selected;
-  EntityId hovered;
-};
-
 // Translates the scene into the renderer's flat input: one RenderItem per
 // visible mesh, with selection/hover highlighting. This is the only place
-// where scene and renderer types meet.
+// where scene and renderer types meet. Simulated bodies are placed at their
+// pose interpolated by `alpha` between the last two fixed steps.
 std::vector<RenderItem> BuildRenderItems(const Scene& scene,
-                                         const SelectionState& selection);
+                                         const SelectionState& selection,
+                                         double alpha = 1.0);
 
 // Adds bounding boxes and the local coordinate frame of the selected entity,
 // and a lighter box around the hovered one.
 void AddSelectionOverlay(const Scene& scene, const SelectionState& selection,
-                         DebugDrawList& lines);
+                         DebugDrawList& lines, double alpha = 1.0);
 
 }  // namespace aerolab
 

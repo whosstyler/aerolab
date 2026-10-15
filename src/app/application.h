@@ -15,6 +15,8 @@
 #include "render/render_types.h"
 #include "render/renderer.h"
 #include "scene/scene.h"
+#include "world/debug_visualizer.h"
+#include "world/simulation.h"
 
 namespace aerolab {
 
@@ -57,6 +59,8 @@ class Application {
   InputState input_;
   CameraRig camera_rig_;
   Scene scene_;
+  SimulationSystem simulation_;
+  DebugViewOptions debug_options_;
   SelectionState selection_;
 
   // Set when a left press starts a potential selection click.

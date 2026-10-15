@@ -78,6 +78,25 @@ class Scene {
   // Every live entity, in slot order.
   std::vector<EntityId> AllEntities() const;
 
+  // Calls fn(EntityId, Entity&) for every live entity in slot order without
+  // allocating. `fn` must not create or destroy entities.
+  template <typename Fn>
+  void ForEachEntity(Fn&& fn) {
+    for (std::uint32_t i = 0; i < slots_.size(); ++i) {
+      if (slots_[i].alive)
+        fn(EntityId{i, slots_[i].generation}, slots_[i].entity);
+    }
+  }
+  template <typename Fn>
+  void ForEachEntity(Fn&& fn) const {
+    for (std::uint32_t i = 0; i < slots_.size(); ++i) {
+      if (slots_[i].alive) {
+        fn(EntityId{i, slots_[i].generation},
+           static_cast<const Entity&>(slots_[i].entity));
+      }
+    }
+  }
+
   std::size_t size() const { return alive_count_; }
 
   // Unique, human-friendly name such as "Dart 3" based on `base`.

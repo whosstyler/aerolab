@@ -18,8 +18,11 @@ struct PickHit {
 
 // Casts `ray` against the oriented bounding boxes of every visible mesh and
 // returns the nearest hit. Hits on parts marked `pick_parent` resolve to the
-// part's parent so clicking a rotor selects the whole vehicle.
-std::optional<PickHit> PickEntity(const Scene& scene, const Ray& ray);
+// part's parent so clicking a rotor selects the whole vehicle. Objects are
+// tested at their rendered pose (`alpha`, see RenderWorldMatrix) so picks
+// match what is on screen.
+std::optional<PickHit> PickEntity(const Scene& scene, const Ray& ray,
+                                  double alpha = 1.0);
 
 }  // namespace aerolab
 
