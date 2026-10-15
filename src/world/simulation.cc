@@ -15,6 +15,7 @@
 #include "math/intersection.h"
 #include "math/quat.h"
 #include "math/transform.h"
+#include "sim/agent_vehicle.h"
 #include "sim/flight_agent.h"
 #include "sim/force_model.h"
 #include "sim/integrator.h"
@@ -100,6 +101,7 @@ void ResetBody(BodyComponent& body) {
     body.state.velocity = launch.velocity;
     body.state.orientation = launch.orientation;
     sim::ResetBrain(body.agent, launch, body.brain);
+    sim::ResetVehicle(body.agent.style, body.vehicle);
     body.avoiding = kNoEntity;
   } else {
     body.acceleration = CurrentAcceleration(body);
@@ -288,21 +290,28 @@ void SimulationSystem::StepAgentBody(EntityId id, const std::string& name,
                                      BodyComponent& body, double dt) {
   if (!(dt > 0.0)) return;
   ObstaclesFor(obstacles_, id, agent_shapes_, agent_ids_);
-  sim::AgentMotion motion{.position = body.state.position,
-                          .velocity = body.state.velocity,
-                          .acceleration = body.acceleration,
-                          .orientation = body.state.orientation};
-  const std::optional<sim::AgentDecision> decision =
-      sim::StepAgent(body.agent, agent_shapes_, dt, body.brain, motion);
-
-  body.state.position = motion.position;
-  body.state.velocity = motion.velocity;
-  body.state.orientation = motion.orientation;
-  body.state.angular_velocity =
-      ToRotationVector(motion.orientation *
-                       Conjugate(body.previous.orientation)) /
-      dt;
-  body.acceleration = motion.acceleration;
+  std::optional<sim::AgentDecision> decision;
+  if (body.agent.model == sim::FlightModel::kPhysical) {
+    // A real airframe: forces, moments and an autopilot move the body.
+    decision = sim::StepPhysicalAgent(
+        body.agent, agent_shapes_, body.forces.wind, dt, body.brain,
+        body.vehicle, body.state, body.acceleration);
+  } else {
+    sim::AgentMotion motion{.position = body.state.position,
+                            .velocity = body.state.velocity,
+                            .acceleration = body.acceleration,
+                            .orientation = body.state.orientation};
+    decision =
+        sim::StepAgent(body.agent, agent_shapes_, dt, body.brain, motion);
+    body.state.position = motion.position;
+    body.state.velocity = motion.velocity;
+    body.state.orientation = motion.orientation;
+    body.state.angular_velocity =
+        ToRotationVector(motion.orientation *
+                         Conjugate(body.previous.orientation)) /
+        dt;
+    body.acceleration = motion.acceleration;
+  }
   const int avoided = body.brain.avoidance.obstacle;
   body.avoiding =
       avoided >= 0 && static_cast<std::size_t>(avoided) < agent_ids_.size()
@@ -438,16 +447,26 @@ std::optional<Aabb> RenderWorldBounds(const Scene& scene, EntityId id,
                        RenderWorldMatrix(scene, id, alpha));
 }
 
+const sim::MassProperties& SimulatedMass(const BodyComponent& body) {
+  if (body.motion == MotionType::kAutonomous &&
+      body.agent.model == sim::FlightModel::kPhysical) {
+    return sim::AirframeMass(body.agent.style, body.vehicle);
+  }
+  return body.mass;
+}
+
 double PotentialEnergy(const BodyComponent& body) {
   // Agents ignore the force model, so only plain gravity applies to them.
   if (body.motion == MotionType::kAutonomous) {
-    return body.mass.mass * sim::kStandardGravity * body.state.position.y;
+    return SimulatedMass(body).mass * sim::kStandardGravity *
+           body.state.position.y;
   }
   return sim::PotentialEnergy(body.state, body.mass, body.forces);
 }
 
 double MechanicalEnergy(const BodyComponent& body) {
-  return sim::KineticEnergy(body.state, body.mass) + PotentialEnergy(body);
+  return sim::KineticEnergy(body.state, SimulatedMass(body)) +
+         PotentialEnergy(body);
 }
 
 }  // namespace aerolab

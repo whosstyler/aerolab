@@ -13,6 +13,7 @@
 #include "math/quat.h"
 #include "math/transform.h"
 #include "math/vec3.h"
+#include "sim/agent_vehicle.h"
 #include "sim/flight_agent.h"
 #include "sim/force_model.h"
 #include "sim/integrator.h"
@@ -100,9 +101,11 @@ struct BodyComponent {
   sim::KinematicPath path;  // Used when motion == kKinematic.
 
   // Used when motion == kAutonomous: the agent's settings, its decision
-  // state, and the object it is currently steering clear of (if any).
+  // state, its airframe (with the physical flight model), and the object
+  // it is currently steering clear of (if any).
   sim::AgentParams agent;
   sim::AgentBrain brain;
+  sim::AgentVehicle vehicle;
   EntityId avoiding;
 
   double age = 0.0;   // Seconds since launch (or the last reset).

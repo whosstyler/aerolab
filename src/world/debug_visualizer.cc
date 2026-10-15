@@ -13,6 +13,7 @@
 #include "geometry/mesh_library.h"
 #include "math/mat4.h"
 #include "math/scalar.h"
+#include "sim/agent_vehicle.h"
 #include "sim/flight_agent.h"
 #include "sim/force_model.h"
 #include "sim/integrator.h"
@@ -178,12 +179,27 @@ std::vector<Vec3> PredictTrajectory(
     // runs the full AI, so the forecast is capped to keep frames cheap.
     steps = std::min(steps, kMaxAgentForecastSteps);
     sim::AgentBrain brain = body.brain;
+    // Obstacles carry on at their current velocities.
+    std::vector<sim::AgentObstacle> moving(obstacles.begin(), obstacles.end());
+    if (body.agent.model == sim::FlightModel::kPhysical) {
+      // Fly a copy of the airframe and its autopilot too.
+      sim::AgentVehicle vehicle = body.vehicle;
+      sim::RigidBodyState state = body.state;
+      Vec3 acceleration = body.acceleration;
+      for (int i = 0; i < steps; ++i) {
+        sim::StepPhysicalAgent(body.agent, moving, body.forces.wind, dt, brain,
+                               vehicle, state, acceleration);
+        // A diverging forecast stops where the real body would be frozen.
+        if (!IsFinite(state.position)) break;
+        points.push_back(state.position);
+        for (sim::AgentObstacle& o : moving) o.center += o.velocity * dt;
+      }
+      return points;
+    }
     sim::AgentMotion motion{.position = body.state.position,
                             .velocity = body.state.velocity,
                             .acceleration = body.acceleration,
                             .orientation = body.state.orientation};
-    // Obstacles carry on at their current velocities.
-    std::vector<sim::AgentObstacle> moving(obstacles.begin(), obstacles.end());
     for (int i = 0; i < steps; ++i) {
       sim::StepAgent(body.agent, moving, dt, brain, motion);
       points.push_back(motion.position);

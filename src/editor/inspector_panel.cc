@@ -19,10 +19,16 @@
 #include "math/random.h"
 #include "math/scalar.h"
 #include "math/transform.h"
+#include "sim/aerodynamics.h"
+#include "sim/agent_vehicle.h"
+#include "sim/atmosphere.h"
+#include "sim/fixed_wing.h"
 #include "sim/flight_agent.h"
+#include "sim/flight_control.h"
 #include "sim/force_model.h"
 #include "sim/integrator.h"
 #include "sim/kinematic_path.h"
+#include "sim/multirotor.h"
 #include "sim/rigid_body.h"
 #include "world/autonomy.h"
 #include "world/presets.h"
@@ -103,7 +109,7 @@ void DrawLiveState(const BodyComponent& body) {
     PropertyText("Altitude", std::format("{:.2f} m", s.position.y));
     PropertyText("Age", std::format("{:.2f} s", body.age));
     if (body.motion != MotionType::kKinematic) {
-      const double kinetic = sim::KineticEnergy(s, body.mass);
+      const double kinetic = sim::KineticEnergy(s, SimulatedMass(body));
       const double potential = PotentialEnergy(body);
       PropertyText("Kinetic energy", std::format("{:.1f} J", kinetic));
       PropertyText("Potential energy", std::format("{:.1f} J", potential),
@@ -112,9 +118,10 @@ void DrawLiveState(const BodyComponent& body) {
                        : "Gravity, spring and central-body terms");
       PropertyText("Total energy",
                    std::format("{:.1f} J", kinetic + potential));
-      PropertyText("|Angular mom.|",
-                   std::format("{:.3f} kg m^2/s",
-                               Length(sim::AngularMomentum(s, body.mass))));
+      PropertyText(
+          "|Angular mom.|",
+          std::format("{:.3f} kg m^2/s",
+                      Length(sim::AngularMomentum(s, SimulatedMass(body)))));
     }
     EndProperties();
   }
@@ -365,6 +372,76 @@ void DrawAutopilot(const Scene& scene, const BodyComponent& body) {
   }
 }
 
+// Live state of a physical agent's airframe: what the autopilot is doing
+// with the actuators and how the air is meeting the vehicle.
+void DrawAirframe(const BodyComponent& body) {
+  if (body.agent.model != sim::FlightModel::kPhysical) return;
+  if (!ImGui::CollapsingHeader("Airframe", kOpen)) return;
+  const sim::AgentVehicle& vehicle = body.vehicle;
+  const sim::Atmosphere air = sim::StandardAtmosphere(body.state.position.y);
+  const Vec3 wind =
+      IsFinite(body.forces.wind) ? body.forces.wind : Vec3::Zero();
+  const sim::AirData flow = sim::ComputeAirData(body.state, wind, air);
+  const sim::AttitudeAngles attitude = sim::AttitudeOf(body.state.orientation);
+  const double density_ratio = air.density / sim::kSeaLevelDensity;
+  if (BeginProperties("##airframe")) {
+    PropertyText("Airspeed", std::format("{:.1f} m/s", flow.airspeed),
+                 "Speed through the air (ground speed minus wind)");
+    PropertyText("Air density", std::format("{:.3f} kg/m^3", air.density),
+                 "Standard atmosphere at the current altitude");
+    if (body.agent.style == sim::FlightStyle::kWing) {
+      const sim::FixedWingActuators& act = vehicle.actuators;
+      const double stall = sim::SeaLevelStallSpeed(vehicle) *
+                           std::sqrt(sim::kSeaLevelDensity / air.density);
+      PropertyText("Stall speed", std::format("{:.1f} m/s", stall),
+                   "Slowest level flight at this altitude; the autopilot "
+                   "keeps at least 30% above it");
+      PropertyText(
+          "Angle of attack",
+          std::format("{:.1f} deg  (stalls at {:.0f})", Degrees(flow.alpha),
+                      Degrees(vehicle.wing.aero.alpha_stall)));
+      PropertyText("Sideslip", std::format("{:.1f} deg", Degrees(flow.beta)));
+      PropertyText("Bank / pitch",
+                   std::format("{:.1f} / {:.1f} deg", Degrees(attitude.roll),
+                               Degrees(attitude.pitch)));
+      PropertyText(
+          "Throttle",
+          std::format(
+              "{:.0f} %  ({:.1f} N thrust)", act.throttle * 100.0,
+              sim::PropellerThrust(vehicle.wing, act.throttle, flow.airspeed) *
+                  density_ratio));
+      PropertyText(
+          "Elevator / aileron",
+          std::format("{:.1f} / {:.1f} deg", Degrees(act.surfaces.elevator),
+                      Degrees(act.surfaces.aileron)),
+          "Elevator down (positive) lowers the nose; aileron positive rolls "
+          "right");
+      PropertyText("Rudder",
+                   std::format("{:.1f} deg", Degrees(act.surfaces.rudder)));
+    } else {
+      const sim::MultirotorParams& quad = vehicle.quad;
+      double thrust = 0.0;
+      for (double w : vehicle.motors.rotor_speed) {
+        thrust += quad.thrust_coefficient * w * w * density_ratio;
+      }
+      const auto& w = vehicle.motors.rotor_speed;
+      PropertyText("Rotor speeds",
+                   std::format("{:.0f}, {:.0f}, {:.0f}, {:.0f} rad/s", w[0],
+                               w[1], w[2], w[3]),
+                   "Front-right, front-left, rear-left, rear-right");
+      PropertyText(
+          "Thrust / weight",
+          std::format("{:.2f}",
+                      thrust / (quad.mass.mass * sim::kStandardGravity)),
+          "Total rotor thrust over the weight: 1 carries it in a hover");
+      const double tilt = std::acos(std::clamp(
+          Rotate(body.state.orientation, Vec3::UnitY()).y, -1.0, 1.0));
+      PropertyText("Tilt", std::format("{:.1f} deg", Degrees(tilt)));
+    }
+    EndProperties();
+  }
+}
+
 // Tunable behaviour. Most settings apply on the next step; style and seed
 // changes restart the agent's decision making.
 void DrawAutopilotSettings(EditorFrame& frame, EntityId id,
@@ -387,7 +464,34 @@ void DrawAutopilotSettings(EditorFrame& frame, EntityId id,
         const std::string name(sim::FlightStyleName(style));
         if (ImGui::Selectable(name.c_str(), style == agent.style) &&
             style != agent.style) {
-          sim::AgentParams fresh = AgentParamsFor(*frame.scene, id, style);
+          sim::AgentParams fresh =
+              AgentParamsFor(*frame.scene, id, style, agent.model);
+          fresh.area.center = agent.area.center;
+          fresh.seed = agent.seed;
+          agent = fresh;
+          relaunch = true;
+        }
+      }
+      ImGui::EndCombo();
+    }
+    PropertyLabel("Flight model",
+                  "Physical: a real airframe (a 1.2 kg quadrotor or a 2 kg "
+                  "trainer airplane) with rotor or wing aerodynamics, flown "
+                  "by an autopilot that only moves its rotors or throttle "
+                  "and control surfaces. Simple: an idealized point mass "
+                  "that follows the request within its envelope. Switching "
+                  "loads that model's envelope (keeping the area centre and "
+                  "seed).");
+    const std::string model(sim::FlightModelName(agent.model));
+    if (ImGui::BeginCombo("##flight_model", model.c_str())) {
+      for (sim::FlightModel option :
+           {sim::FlightModel::kPhysical, sim::FlightModel::kSimple}) {
+        const std::string name(sim::FlightModelName(option));
+        if (ImGui::Selectable(name.c_str(), option == agent.model) &&
+            option != agent.model) {
+          // Each model has its own envelope; keep the area centre and seed.
+          sim::AgentParams fresh =
+              AgentParamsFor(*frame.scene, id, agent.style, option);
           fresh.area.center = agent.area.center;
           fresh.seed = agent.seed;
           agent = fresh;
@@ -605,6 +709,7 @@ void DrawInspectorPanel(EditorFrame& frame) {
       DrawPath(frame, id, body);
     } else if (body.motion == MotionType::kAutonomous) {
       DrawAutopilot(*frame.scene, body);
+      DrawAirframe(body);
       DrawAutopilotSettings(frame, id, body);
     } else {
       DrawMass(frame, id, body);

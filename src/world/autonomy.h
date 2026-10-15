@@ -41,12 +41,14 @@ void ObstaclesFor(std::span<const SceneObstacle> all, EntityId agent,
 // darts) fly like wings, everything else hovers.
 sim::FlightStyle NaturalFlightStyle(const Entity& entity);
 
-// Default settings for `style`, fitted to the entity: the flight area is
+// Default settings for `style` flown with `model` (the physical model's
+// envelope suits its airframes), fitted to the entity: the flight area is
 // centred under it, the seed derives from its id and the body radius from
 // its mesh. Copying these settings to another agent copies the seed, so
 // both would make identical choices; give each agent its own seed.
-sim::AgentParams AgentParamsFor(const Scene& scene, EntityId id,
-                                sim::FlightStyle style);
+sim::AgentParams AgentParamsFor(
+    const Scene& scene, EntityId id, sim::FlightStyle style,
+    sim::FlightModel model = sim::FlightModel::kPhysical);
 
 // One-line description of a decision for the event log, e.g.
 // "Quadrotor: hovering for 3.2 s".

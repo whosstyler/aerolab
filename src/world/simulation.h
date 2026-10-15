@@ -132,6 +132,11 @@ Mat4 RenderWorldMatrix(const Scene& scene, EntityId id, double alpha);
 std::optional<Aabb> RenderWorldBounds(const Scene& scene, EntityId id,
                                       double alpha);
 
+// The mass properties the simulation moves a body with: its airframe's
+// for an autonomous body flying the physical model, its own otherwise.
+// The body's own mass is left alone, so switching back restores it.
+const sim::MassProperties& SimulatedMass(const BodyComponent& body);
+
 // Potential energy of a body: its force model's terms, or plain gravity
 // for autonomous bodies (which ignore the force model).
 double PotentialEnergy(const BodyComponent& body);

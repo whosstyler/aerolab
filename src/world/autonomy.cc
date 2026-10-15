@@ -14,6 +14,7 @@
 #include "math/random.h"
 #include "math/transform.h"
 #include "math/vec3.h"
+#include "sim/agent_vehicle.h"
 
 namespace aerolab {
 namespace {
@@ -102,8 +103,11 @@ sim::FlightStyle NaturalFlightStyle(const Entity& entity) {
 }
 
 sim::AgentParams AgentParamsFor(const Scene& scene, EntityId id,
-                                sim::FlightStyle style) {
-  sim::AgentParams params = sim::DefaultAgentParams(style);
+                                sim::FlightStyle style,
+                                sim::FlightModel model) {
+  sim::AgentParams params = model == sim::FlightModel::kPhysical
+                                ? sim::PhysicalAgentParams(style)
+                                : sim::DefaultAgentParams(style);
   const Entity* entity = scene.Get(id);
   if (entity == nullptr) return params;
   const Transform world = scene.WorldTransform(id);

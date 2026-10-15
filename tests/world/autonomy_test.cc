@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cmath>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "math/quat.h"
@@ -12,6 +13,9 @@
 #include "math/vec3.h"
 #include "scene/entity.h"
 #include "scene/scene.h"
+#include "sim/agent_vehicle.h"
+#include "sim/atmosphere.h"
+#include "sim/fixed_wing.h"
 #include "sim/flight_agent.h"
 #include "sim/force_model.h"
 #include "world/debug_visualizer.h"
@@ -53,6 +57,77 @@ TEST(AutonomyTest, AiPresetsConfigureAutonomousBodies) {
   // Wings start at cruise speed along the nose.
   EXPECT_NEAR(Length(p.state.velocity), p.agent.cruise_speed_min, 1e-9);
   EXPECT_FALSE(q.ground_contact);
+}
+
+TEST(AutonomyTest, ScenePresetsFlyPhysicalAirframes) {
+  Scene scene;
+  const EntityId quad = SpawnFlyer(scene, Archetype::kQuadrotor,
+                                   MotionPreset::kAutoHover, {5, 15, -3});
+  const EntityId plane = SpawnFlyer(scene, Archetype::kFixedWing,
+                                    MotionPreset::kAutoWing, {-20, 25, 10});
+  SimulationSystem simulation(kStep);
+  simulation.Reset(scene);
+  const BodyComponent& q = *scene.Get(quad)->body;
+  const BodyComponent& p = *scene.Get(plane)->body;
+  EXPECT_EQ(q.agent.model, sim::FlightModel::kPhysical);
+  EXPECT_EQ(p.agent.model, sim::FlightModel::kPhysical);
+  // Telemetry uses the airframe's mass; the body keeps its own for when
+  // it stops flying the physical model.
+  EXPECT_EQ(SimulatedMass(q).mass, q.vehicle.quad.mass.mass);
+  EXPECT_EQ(SimulatedMass(p).mass, p.vehicle.wing.mass.mass);
+  EXPECT_NE(p.mass.mass, p.vehicle.wing.mass.mass);
+
+  RunSteps(simulation, scene, 20 * 120);
+  EXPECT_EQ(q.halt, BodyHalt::kNone);
+  EXPECT_EQ(p.halt, BodyHalt::kNone);
+  // Both are really flying: rotors spinning, the plane above its stall.
+  for (double w : q.vehicle.motors.rotor_speed) EXPECT_GT(w, 300.0);
+  EXPECT_GT(Length(p.state.velocity - p.forces.wind),
+            sim::StallSpeed(p.vehicle.wing, sim::kSeaLevelDensity));
+  EXPECT_GT(q.state.position.y, q.agent.area.min_altitude - 2.0);
+  EXPECT_GT(p.state.position.y, p.agent.area.min_altitude - 6.0);
+}
+
+TEST(AutonomyTest, PhysicalForecastMatchesWhatTheAirframeThenDoes) {
+  for (const auto [archetype, preset] :
+       {std::pair{Archetype::kQuadrotor, MotionPreset::kAutoHover},
+        std::pair{Archetype::kFixedWing, MotionPreset::kAutoWing}}) {
+    Scene scene;
+    const EntityId flyer = SpawnFlyer(scene, archetype, preset, {0, 20, 0});
+    Spawn(scene, Archetype::kCube, {3, 0.5, -4});  // A static landmark.
+    SimulationSystem simulation(kStep);
+    simulation.Reset(scene);
+    ASSERT_EQ(scene.Get(flyer)->body->agent.model, sim::FlightModel::kPhysical);
+    RunSteps(simulation, scene, 5 * 120);
+
+    std::vector<SceneObstacle> all;
+    std::vector<sim::AgentObstacle> shapes;
+    std::vector<EntityId> ids;
+    CollectObstacles(scene, all);
+    ObstaclesFor(all, flyer, shapes, ids);
+    // At the simulation's own step the forecast flies the same airframe,
+    // autopilot and brain, so it is exact.
+    const std::vector<Vec3> forecast =
+        PredictTrajectory(*scene.Get(flyer)->body, 4.0, kStep, shapes);
+    ASSERT_EQ(forecast.size(), 4u * 120u + 1u);
+    RunSteps(simulation, scene, 4 * 120);
+    EXPECT_EQ(forecast.back(), scene.Get(flyer)->body->state.position);
+  }
+}
+
+TEST(AutonomyTest, SimpleFlightModelStillFliesAndForecasts) {
+  Scene scene;
+  const EntityId quad = SpawnFlyer(scene, Archetype::kQuadrotor,
+                                   MotionPreset::kAutoHover, {0, 8, 0});
+  scene.Get(quad)->body->agent.model = sim::FlightModel::kSimple;
+  SimulationSystem simulation(kStep);
+  simulation.Reset(scene);
+  RunSteps(simulation, scene, 3 * 120);
+  const std::vector<Vec3> forecast =
+      PredictTrajectory(*scene.Get(quad)->body, 2.0, kStep, {});
+  RunSteps(simulation, scene, 2 * 120);
+  EXPECT_EQ(forecast.back(), scene.Get(quad)->body->state.position);
+  EXPECT_EQ(scene.Get(quad)->body->halt, BodyHalt::kNone);
 }
 
 TEST(AutonomyTest, NaturalStyleFollowsTheShape) {

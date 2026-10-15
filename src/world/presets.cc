@@ -11,6 +11,7 @@
 #include "math/quat.h"
 #include "math/scalar.h"
 #include "math/transform.h"
+#include "sim/agent_vehicle.h"
 #include "sim/flight_agent.h"
 #include "sim/kinematic_path.h"
 #include "sim/rigid_body.h"
@@ -250,6 +251,8 @@ void ApplyMotionPreset(Scene& scene, EntityId id, MotionPreset preset) {
       body.motion = MotionType::kAutonomous;
       body.ground_contact = false;
       body.agent = AgentParamsFor(scene, id, style);
+      // Used by the simple flight model; the physical model flies the
+      // airframe's own mass.
       body.mass = style == sim::FlightStyle::kWing
                       ? sim::BoxMassProperties(1.5, {2.4, 0.3, 1.8})
                       : sim::BoxMassProperties(1.2, {0.9, 0.25, 0.9});
