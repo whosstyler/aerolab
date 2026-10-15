@@ -2,9 +2,11 @@
 
 AeroLab is a small, purpose-built 3D simulation engine and editor for exploring
 the mathematics, physics, and graphics programming behind fast-moving aerial
-objects. It is an **educational sandbox**: every object is a generic rigid body
-or kinematic path driven by configurable toy force models. There is no
-guidance, targeting, or interception logic anywhere in the code base.
+objects. It is an **educational sandbox**: every object is a generic rigid body,
+a kinematic path or a self-flying game-AI agent driven by configurable toy
+models. Agents only head for points they choose themselves and only ever
+steer away from other objects; there is no guidance, targeting, or
+interception logic anywhere in the code base.
 
 ## Goals
 
@@ -187,6 +189,20 @@ convergence orders, RK4's second-order orientation, and why the
 rotation. Divergence (a non-finite state) and runaway states past the
 simulation bounds are detected per body; the body is frozen (`BodyHalt`)
 until the next reset instead of spreading NaNs or float overflow.
+
+**Autonomous agents.** `sim/flight_agent` is pure decision and motion
+logic with no scene types: `StepAgent(params, obstacles, dt, brain,
+motion)`. `world/autonomy` is the sensing side: it turns the scene into
+bounding-sphere obstacles (bodies plus free-standing props; a body's
+attached parts such as rotors are skipped) once per fixed step, before any
+body moves, so stepping order does not matter. The brain, including its
+SplitMix64 generator, is plain copyable data: reset re-seeds it, and the
+look-ahead copies it and steps the copy (moving obstacles along their
+current velocities), which is why the forecast line is exact in a static
+scene. Avoidance feelers are cast in each obstacle's frame (relative
+velocity), and `SanitizeAgentParams` makes any parameter set safe.
+Decisions surface as `SimulationEvent::Kind::kDecision` entries in
+the event log (not on stderr, they are frequent).
 
 ## Status
 

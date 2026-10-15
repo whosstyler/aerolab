@@ -6,10 +6,12 @@ architecture behind fast-moving aerial objects. It is written from the
 ground up in C++20 on SDL3, OpenGL 3.3 and Dear ImGui, with its own math
 library and a GoogleTest suite.
 
-It is an educational sandbox. Every object is a generic rigid body or a
-scripted path driven by configurable toy force models: balls, boxes, model
-darts, a glider, a quadrotor frame, springs, orbits. There is no guidance,
-targeting or interception logic anywhere in the code base.
+It is an educational sandbox. Every object is a generic rigid body, a
+scripted path or a self-flying "game AI" agent driven by configurable toy
+models: balls, boxes, model darts, a glider, a quadrotor frame, a small
+plane, springs, orbits. Agents only fly to points they pick themselves and
+only ever steer away from other objects; there is no guidance, targeting or
+interception logic anywhere in the code base.
 
 ![AeroLab editor: hierarchy, 3D viewport, inspector and telemetry](docs/images/editor.png)
 
@@ -45,6 +47,32 @@ targeting or interception logic anywhere in the code base.
 * Ground contact with restitution and Coulomb friction; events for thrust
   burnout, impacts and numerical divergence.
 * Play, pause, single step, reset and a 0.05x to 16x time scale.
+
+**Autonomous flight (game AI)**
+* The demo's quadrotor and patrol plane fly themselves; any object can be
+  switched to *Autonomous (AI)* in the inspector or spawned with the *AI
+  hover flight* / *AI wing flight* presets.
+* Each agent runs sense -> decide -> steer -> move every fixed step: a small
+  state machine (transit, loiter) picks destinations inside its flight area
+  by scoring random candidates (leg length, turn needed, clear line of
+  flight, novelty), chooses a cruise speed per leg, and hovers or circles
+  for a while on arrival.
+* Steering behaviours: arrive, meander (filtered random turning), stay in
+  area, altitude band, and ray-cast obstacle avoidance ("context steering":
+  fly the smallest clear deviation). Feelers work in each obstacle's moving
+  frame, so agents anticipate other moving objects; wings also check the
+  arc they are turning on, and anything too close pushes the agent away.
+  An agent whose destination becomes occupied picks another one.
+* Two flight envelopes: hover (stops, tilts up to a limit to accelerate,
+  jerk-limited) and wing (minimum airspeed, bank-limited turns with a roll
+  rate limit, climb and path-angle limits, coordinated-turn attitude).
+* Deterministic: a seeded generator means the same seed gives the same
+  flight, and the look-ahead line replays the agent's own future
+  decisions (exactly, as long as nothing else changes course).
+* Inspector *Autopilot* section: what it is doing, its destination, leg
+  speed and timers, what it is keeping clear of, plus its main tuning knobs.
+  The *AI* toolbar toggle draws destinations, the flight area, the
+  steering request and the object being avoided.
 
 **Editor**
 * Docking layout: viewport centre, scene hierarchy left, inspector and
@@ -143,10 +171,10 @@ coordinate conventions, frame anatomy and design notes.
 | `src/math` | Vec2/3/4, Mat3/4, Quat, Transform, projections, rays, AABBs |
 | `src/core` | Logging, timing, fixed timestep, input, ring buffer, stats |
 | `src/geometry` | Procedural meshes, mesh library, debug line lists |
-| `src/sim` | Rigid-body state, force model, integrators, kinematic paths |
+| `src/sim` | Rigid-body state, force model, integrators, kinematic paths, flight agents |
 | `src/camera` | Camera and the free-fly/orbit/follow rig |
 | `src/scene` | Entities, generational handles, transform hierarchy |
-| `src/world` | Simulation system, presets, picking, debug visualization |
+| `src/world` | Simulation system, agent sensing, presets, picking, debug visualization |
 | `src/render` | OpenGL 3.3 loader, shaders, meshes, MSAA target, renderer |
 | `src/editor` | Dear ImGui editor panels and widgets |
 | `src/app` | SDL3 platform layer, main loop, command line |
@@ -170,6 +198,13 @@ coordinate conventions, frame anatomy and design notes.
   single-precision rendering and the UI sane.
 * **Toy models.** Drag, lift and the weathervane torque are textbook
   idealizations for teaching, not aerodynamic models of any real vehicle.
+* **Agents.** Flight agents are point masses with simple envelopes, tuned
+  to look plausible: they demonstrate game-AI decision making and steering,
+  not the flight control of any real aircraft. Tests check their envelope,
+  area and altitude limits on every step, and that they never touch an
+  obstacle across many seeds. Obstacles are bounding spheres: a long
+  thin prop becomes a large keep-out volume, and one big enough to engulf
+  an agent's whole flight area is ignored by that agent.
 
 ## Third-party components
 
