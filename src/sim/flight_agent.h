@@ -32,6 +32,15 @@ enum class FlightStyle {
 
 std::string_view FlightStyleName(FlightStyle style);
 
+// How an agent's body moves once the brain has decided where to go.
+enum class FlightModel {
+  kSimple,    // A point mass with an idealized flight envelope.
+  kPhysical,  // A rigid airframe (rotors, or wings and control surfaces)
+              // flown by an autopilot; see sim/agent_vehicle.h.
+};
+
+std::string_view FlightModelName(FlightModel model);
+
 enum class AgentMode {
   kTransit,  // Flying to the current destination.
   kLoiter,   // Hovering in place (kHover) or circling (kWing).
@@ -49,6 +58,7 @@ struct FlightArea {
 
 struct AgentParams {
   FlightStyle style = FlightStyle::kHover;
+  FlightModel model = FlightModel::kSimple;
   FlightArea area;
 
   // Speed envelope, m/s. Each leg picks its own cruise speed uniformly in
@@ -136,8 +146,10 @@ struct AgentBrain {
   int occupied_streak = 0;      // Consecutive plans whose spot was taken.
   int legs_completed = 0;
 
-  // Diagnostics of the latest step, for the UI and debug drawing.
+  // Diagnostics of the latest step, for the UI and debug drawing (and,
+  // with the physical model, what the autopilot is asked to fly).
   Vec3 desired_velocity;
+  double desired_turn_rate = 0.0;  // Circling feed-forward, rad/s (+ left).
   AvoidanceStatus avoidance;
 };
 
@@ -174,7 +186,22 @@ void Replan(AgentBrain& brain);
 // Use before the first step of a launch.
 void FitToEnvelope(const AgentParams& params, AgentMotion& motion);
 
-// Advances one agent by `dt` seconds: decide, steer, move. Returns the
+// The thinking half of a step: sense, decide and steer, leaving the
+// wanted velocity (and circling turn rate) in `brain` without moving
+// anything. Returns the decision made, if any.
+std::optional<AgentDecision> PlanAgent(const AgentParams& params,
+                                       std::span<const AgentObstacle> obstacles,
+                                       double dt, const AgentMotion& motion,
+                                       AgentBrain& brain);
+
+// The heading a hover agent turns to over the next `dt` seconds (also
+// stored in brain.heading): a slow scan while it loiters, otherwise toward
+// its direction of travel `velocity`, never faster than max_yaw_rate.
+double NextHoverHeading(const AgentParams& params, const Vec3& velocity,
+                        double dt, AgentBrain& brain);
+
+// Advances one agent by `dt` seconds with the simple flight model: plan,
+// then move as a point mass within the flight envelope. Returns the
 // decision made during this step, if any.
 std::optional<AgentDecision> StepAgent(const AgentParams& params,
                                        std::span<const AgentObstacle> obstacles,

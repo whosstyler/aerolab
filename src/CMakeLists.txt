@@ -40,6 +40,7 @@ aerolab_add_library(aerolab_geometry
 aerolab_add_library(aerolab_sim
   SOURCES
     sim/aerodynamics.cc
+    sim/agent_vehicle.cc
     sim/atmosphere.cc
     sim/fixed_wing.cc
     sim/flight_agent.cc

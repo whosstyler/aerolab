@@ -40,6 +40,7 @@ aerolab_add_test(geometry_test
 
 aerolab_add_test(sim_test
   SOURCES
+    sim/agent_vehicle_test.cc
     sim/flight_agent_test.cc
     sim/flight_control_test.cc
     sim/flight_physics_test.cc

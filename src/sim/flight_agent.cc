@@ -16,6 +16,7 @@
 #include "math/scalar.h"
 #include "math/vec3.h"
 #include "sim/force_model.h"
+#include "sim/heading.h"
 
 namespace aerolab::sim {
 namespace {
@@ -92,14 +93,6 @@ constexpr double kWingClimbResponse = 0.8;  // s
 constexpr double kWingMaxPathAngle = Radians(25.0);
 
 Vec3 Horizontal(const Vec3& v) { return {v.x, 0.0, v.z}; }
-double HorizontalLength(const Vec3& v) { return std::hypot(v.x, v.z); }
-
-// Heading convention: 0 faces -Z; positive angles turn left (toward -X).
-Vec3 HeadingVector(double heading) {
-  return {-std::sin(heading), 0.0, -std::cos(heading)};
-}
-double HeadingOf(const Vec3& v) { return std::atan2(-v.x, -v.z); }
-double WrapAngle(double angle) { return std::remainder(angle, kTwoPi); }
 
 // Rotates `v` about +Y; positive angles turn left like headings do.
 Vec3 RotateAboutUp(const Vec3& v, double angle) {
@@ -807,15 +800,7 @@ void MoveHover(const AgentParams& p, const Steering& s, double dt,
   KeepAboveGround(m);
   m.acceleration = a;
 
-  // Heading: face the direction of travel, or scan slowly while hovering.
-  const double yaw_step = std::max(p.max_yaw_rate, 0.0) * dt;
-  if (b.mode == AgentMode::kLoiter) {
-    b.heading += b.turn_direction * std::min(kHoverScanRate * dt, yaw_step);
-  } else if (HorizontalLength(m.velocity) > 1.0) {
-    const double error = WrapAngle(HeadingOf(m.velocity) - b.heading);
-    b.heading += std::clamp(error, -yaw_step, yaw_step);
-  }
-  b.heading = WrapAngle(b.heading);
+  NextHoverHeading(p, m.velocity, dt, b);
 
   // Attitude: thrust axis along a + g, nose as close to the heading as the
   // tilt allows.
@@ -898,6 +883,16 @@ std::string_view FlightStyleName(FlightStyle style) {
   return "Unknown";
 }
 
+std::string_view FlightModelName(FlightModel model) {
+  switch (model) {
+    case FlightModel::kSimple:
+      return "Simple";
+    case FlightModel::kPhysical:
+      return "Physical";
+  }
+  return "Unknown";
+}
+
 std::string_view AgentModeName(AgentMode mode) {
   switch (mode) {
     case AgentMode::kTransit:
@@ -976,6 +971,7 @@ AgentParams SanitizeAgentParams(const AgentParams& params) {
   p.body_radius = fix(p.body_radius, d.body_radius, 0.0, kMaxParamSize);
   p.clearance = fix(p.clearance, d.clearance, 0.0, kMaxParamSize);
   p.lookahead = fix(p.lookahead, d.lookahead, 0.1, 60.0);
+  if (p.model != FlightModel::kPhysical) p.model = FlightModel::kSimple;
   return p;
 }
 
@@ -1045,10 +1041,10 @@ void FitToEnvelope(const AgentParams& params, AgentMotion& motion) {
   motion.orientation = LookRotation(HeadingVector(heading), Vec3::UnitY());
 }
 
-std::optional<AgentDecision> StepAgent(const AgentParams& params,
+std::optional<AgentDecision> PlanAgent(const AgentParams& params,
                                        std::span<const AgentObstacle> obstacles,
-                                       double dt, AgentBrain& brain,
-                                       AgentMotion& motion) {
+                                       double dt, const AgentMotion& motion,
+                                       AgentBrain& brain) {
   if (!(dt > 0.0) || !std::isfinite(dt)) return std::nullopt;
   const AgentParams p = SanitizeAgentParams(params);
   brain.avoidance = AvoidanceStatus();
@@ -1068,7 +1064,36 @@ std::optional<AgentDecision> StepAgent(const AgentParams& params,
   HoldAltitudeBand(p, motion, brain, steering);
   LimitRequest(p, steering);
   brain.desired_velocity = steering.desired;
+  brain.desired_turn_rate = steering.turn_rate;
+  return decision;
+}
 
+double NextHoverHeading(const AgentParams& params, const Vec3& velocity,
+                        double dt, AgentBrain& brain) {
+  const double yaw_step = std::isfinite(params.max_yaw_rate) && dt > 0.0
+                              ? std::max(params.max_yaw_rate, 0.0) * dt
+                              : 0.0;
+  if (brain.mode == AgentMode::kLoiter) {
+    brain.heading +=
+        brain.turn_direction * std::min(kHoverScanRate * dt, yaw_step);
+  } else if (HorizontalLength(velocity) > 1.0) {
+    const double error = WrapAngle(HeadingOf(velocity) - brain.heading);
+    brain.heading += std::clamp(error, -yaw_step, yaw_step);
+  }
+  brain.heading = WrapAngle(brain.heading);
+  return brain.heading;
+}
+
+std::optional<AgentDecision> StepAgent(const AgentParams& params,
+                                       std::span<const AgentObstacle> obstacles,
+                                       double dt, AgentBrain& brain,
+                                       AgentMotion& motion) {
+  if (!(dt > 0.0) || !std::isfinite(dt)) return std::nullopt;
+  const std::optional<AgentDecision> decision =
+      PlanAgent(params, obstacles, dt, motion, brain);
+  const AgentParams p = SanitizeAgentParams(params);
+  const Steering steering{.desired = brain.desired_velocity,
+                          .turn_rate = brain.desired_turn_rate};
   if (IsWing(p)) {
     MoveWing(p, steering, dt, brain, motion);
   } else {
