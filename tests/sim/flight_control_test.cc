@@ -20,6 +20,9 @@ namespace aerolab::sim {
 namespace {
 
 constexpr double kDt = 1.0 / 120.0;
+// Lift peaks a degree or two before the nominal stall angle; staying this
+// far below it keeps the wing on the near side of the peak.
+constexpr double kPeakLiftMargin = Radians(2.0);
 
 double Course(const Vec3& v) { return std::atan2(-v.x, -v.z); }
 double Tilt(const Quat& q) {
@@ -281,7 +284,7 @@ TEST(WingAutopilotTest, SteepBankRequestsStayClearOfTheStall) {
   sim.limits.stall_speed =
       StallSpeed(sim.params, StandardAtmosphere(120.0).density);
   sim.Run({.velocity = {0.0, 0.0, 10.0}}, 20.0);
-  EXPECT_LT(sim.max_alpha_seen, sim.params.aero.alpha_stall);
+  EXPECT_LT(sim.max_alpha_seen, sim.params.aero.alpha_stall - kPeakLiftMargin);
   // The bank stayed within what is safe at the airspeed of the moment.
   EXPECT_LT(sim.max_bank_excess, Radians(3.0));
   EXPECT_LT(sim.max_bank_seen, kMaxAutopilotBank + Radians(2.0));
@@ -300,8 +303,9 @@ TEST(WingAutopilotTest, FliesTheAirspeedThatMakesTheGroundSpeedInWind) {
   WingSim tail(17.0);
   tail.wind = {0.0, 0.0, -8.0};
   tail.Run({.velocity = {0.0, 0.0, -10.0}}, 30.0);
-  EXPECT_GT(Length(tail.body.velocity - tail.wind),
-            0.95 * tail.limits.min_airspeed);
+  EXPECT_NEAR(Length(tail.body.velocity - tail.wind), tail.limits.min_airspeed,
+              0.5);
+  EXPECT_NEAR(-tail.body.velocity.z, tail.limits.min_airspeed + 8.0, 0.5);
 }
 
 TEST(WingAutopilotTest, FliesOutOfAStall) {
@@ -313,7 +317,7 @@ TEST(WingAutopilotTest, FliesOutOfAStall) {
       ComputeAirData(sim.body, sim.wind,
                      StandardAtmosphere(sim.body.position.y))
           .alpha;
-  EXPECT_LT(alpha_after, sim.params.aero.alpha_stall);
+  EXPECT_LT(alpha_after, sim.params.aero.alpha_stall - kPeakLiftMargin);
   sim.Run({.velocity = {0.0, 0.0, -14.0}}, 16.0);
   EXPECT_NEAR(Length(sim.body.velocity), 14.0, 1.0);
   EXPECT_GT(sim.body.position.y,
@@ -327,6 +331,8 @@ TEST(WingAutopilotTest, StallSafeBankShrinksNearTheStall) {
   const double near_stall = StallSafeBank(7.6, 10.0, Radians(60.0));
   EXPECT_LT(near_stall, Radians(45.0));
   EXPECT_GT(near_stall, Radians(30.0));
+  // Exactly where the turn's stall speed is 1/1.15 of the airspeed.
+  EXPECT_NEAR(10.0 * std::sqrt(std::cos(near_stall)), 1.15 * 7.6, 1e-9);
   // At or below the margin it still allows a token bank, never NaN.
   EXPECT_EQ(StallSafeBank(7.6, 7.6, Radians(60.0)), Radians(1.0));
 }
@@ -336,7 +342,8 @@ TEST(WingAutopilotTest, KeepsFlyingWhenAskedToGoTooSlowly) {
   sim.Run({.velocity = {0.0, 0.0, -2.0}}, 30.0);
   // It holds its minimum airspeed instead of stalling.
   EXPECT_GT(sim.min_airspeed_seen, 0.85 * sim.limits.min_airspeed);
-  EXPECT_LT(sim.max_alpha_seen, GenericTrainer().aero.alpha_stall);
+  EXPECT_LT(sim.max_alpha_seen,
+            GenericTrainer().aero.alpha_stall - kPeakLiftMargin);
 }
 
 TEST(WingAutopilotTest, CrabsIntoACrosswind) {

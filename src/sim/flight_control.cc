@@ -21,6 +21,8 @@ constexpr double kMaxWingPitch = Radians(20.0);
 constexpr double kStallRecoveryGain = Radians(4.0);
 // Overspeed (m/s) at which a wing stops descending altogether.
 constexpr double kOverspeedBand = 3.0;
+// Underspeed (m/s) at which a wing stops climbing altogether.
+constexpr double kUnderspeedBand = 2.0;
 // How far below the stall angle the autopilot keeps the angle of attack.
 constexpr double kAlphaMargin = Radians(4.0);
 // Turns keep the airspeed this many times above the stall speed in the turn.
@@ -230,6 +232,12 @@ FixedWingCommand WingAutopilot::Update(const FixedWingParams& params,
   if (wanted_climb < 0.0 && overspeed > 0.0) {
     wanted_climb *= std::max(1.0 - overspeed / kOverspeedBand, 0.0);
   }
+  // Likewise a climb steeper than the engine can sustain (in thin air, say)
+  // bleeds off speed, so underspeed eases the climb.
+  const double underspeed = limits.min_airspeed - air.airspeed;
+  if (wanted_climb > 0.0 && underspeed > 0.0) {
+    wanted_climb *= std::max(1.0 - underspeed / kUnderspeedBand, 0.0);
+  }
   // Climb-rate changes are eased in at a gentle vertical acceleration
   // instead of a push-over (or pull-up) the moment the request changes.
   if (dt > 0.0) {
@@ -246,24 +254,33 @@ FixedWingCommand WingAutopilot::Update(const FixedWingParams& params,
           kClimbThrottle * wanted_climb,
       0.0, 1.0);
 
-  // Climb rate -> pitch, with the flight-path angle fed forward, and the
-  // nose lowered when too slow (stall protection).
-  double wanted_pitch = trim_pitch + wanted_climb / speed +
-                        climb.Update(wanted_climb - state.velocity.y, 0.0, dt);
-  if (air.airspeed < limits.min_airspeed) {
-    wanted_pitch -= kStallRecoveryGain * (limits.min_airspeed - air.airspeed);
-  }
-  // Angle-of-attack limit: the nose never rises above the flight path (through
-  // the air) by more than the wing can take, so a stalled wing is flown out
-  // of the stall instead of being held in it.
+  // Angle-of-attack limit: the nose never rises above the flight path
+  // (through the air) by more than the wing can take, so a stalled wing is
+  // flown out of the stall instead of being held in it.
+  double alpha_cap = kMaxWingPitch;
   if (air.airspeed > 1e-3) {
     const double path =
         std::asin(std::clamp(air.relative_wind.y / air.airspeed, -1.0, 1.0));
     const double alpha_limit = params.aero.alpha_stall - kAlphaMargin;
-    wanted_pitch =
-        std::min(wanted_pitch, path + alpha_limit * std::cos(attitude.roll));
+    alpha_cap = path + alpha_limit * std::cos(attitude.roll);
   }
-  wanted_pitch = std::clamp(wanted_pitch, -kMaxWingPitch, kMaxWingPitch);
+
+  // Climb rate -> pitch, with the flight-path angle fed forward, and the
+  // nose lowered when too slow (stall protection). While a protection is
+  // holding the nose down the climb integral is frozen, so it does not
+  // charge up and pitch the nose up again once the protection lets go.
+  const double climb_error = wanted_climb - state.velocity.y;
+  const double feed_forward_pitch = trim_pitch + wanted_climb / speed;
+  const bool protecting =
+      underspeed > 0.0 ||
+      feed_forward_pitch + climb.kp * climb_error + climb.integral > alpha_cap;
+  double wanted_pitch = feed_forward_pitch +
+                        climb.Update(climb_error, 0.0, protecting ? 0.0 : dt);
+  if (underspeed > 0.0) wanted_pitch -= kStallRecoveryGain * underspeed;
+  // The usual pitch range, but never above the angle-of-attack cap (which
+  // may ask for a steeper dive to recover).
+  wanted_pitch = std::min(
+      std::clamp(wanted_pitch, -kMaxWingPitch, kMaxWingPitch), alpha_cap);
 
   // Inner loops, with rate damping. Elevator > 0 lowers the nose. Rudder
   // flies out any sideslip (air from the right: nose right).

@@ -22,6 +22,9 @@ namespace aerolab::sim {
 namespace {
 
 constexpr double kDt = 1.0 / 120.0;
+// Lift peaks a degree or two before the nominal stall angle; staying this
+// far below it keeps the wing on the near side of the peak.
+constexpr double kPeakLiftMargin = Radians(2.0);
 
 double HorizontalDistance(const Vec3& a, const Vec3& b) {
   return std::hypot(a.x - b.x, a.z - b.z);
@@ -141,7 +144,8 @@ TEST(AgentVehicleTest, WingAgentFliesWithoutEverStalling) {
     PhysicalFlight flight = MakePhysicalFlight(FlightStyle::kWing, seed);
     flight.Run(240.0);
     EXPECT_GE(flight.brain.legs_completed, 3) << "seed " << seed;
-    EXPECT_LT(flight.max_alpha, flight.vehicle.wing.aero.alpha_stall)
+    EXPECT_LT(flight.max_alpha,
+              flight.vehicle.wing.aero.alpha_stall - kPeakLiftMargin)
         << "seed " << seed;
     EXPECT_GT(flight.min_airspeed,
               1.1 * StallSpeed(flight.vehicle.wing, kSeaLevelDensity))
@@ -259,7 +263,8 @@ TEST(AgentVehicleTest, WingAgentFliesSafelyInAWind) {
     flight.wind = {4.0, 0.0, 2.0};
     flight.Run(180.0);
     EXPECT_GE(flight.brain.legs_completed, 2) << "seed " << seed;
-    EXPECT_LT(flight.max_alpha, flight.vehicle.wing.aero.alpha_stall)
+    EXPECT_LT(flight.max_alpha,
+              flight.vehicle.wing.aero.alpha_stall - kPeakLiftMargin)
         << "seed " << seed;
     EXPECT_GT(flight.min_airspeed,
               1.1 * StallSpeed(flight.vehicle.wing, kSeaLevelDensity))
@@ -267,7 +272,29 @@ TEST(AgentVehicleTest, WingAgentFliesSafelyInAWind) {
     // Downwind turns cover more ground, so allow a little more room.
     EXPECT_LT(flight.max_area_excess, 0.4 * flight.params.area.radius)
         << "seed " << seed;
+    EXPECT_LT(flight.max_altitude_excess, 6.0) << "seed " << seed;
   }
+}
+
+TEST(AgentVehicleTest, WingAgentKeepsItsSpeedMarginInThinAir) {
+  // At 4.5 km the trainer has less thrust and a higher stall speed: it
+  // climbs more slowly but never trades its speed margin for height.
+  PhysicalFlight flight =
+      MakePhysicalFlight(FlightStyle::kWing, 21, {0.0, 4510.0, 0.0});
+  flight.params.area.min_altitude = 4500.0;
+  flight.params.area.max_altitude = 4530.0;
+  flight.Run(180.0);
+  const double stall_up_there =
+      StallSpeed(flight.vehicle.wing, StandardAtmosphere(4530.0).density);
+  EXPECT_GT(stall_up_there,
+            1.2 * StallSpeed(flight.vehicle.wing, kSeaLevelDensity));
+  // The bank cap's margin: at least 15% above the stall at all times.
+  EXPECT_GT(flight.min_airspeed, 1.15 * stall_up_there);
+  EXPECT_LT(flight.max_alpha,
+            flight.vehicle.wing.aero.alpha_stall - kPeakLiftMargin);
+  EXPECT_GE(flight.brain.legs_completed, 2);
+  EXPECT_LT(flight.max_area_excess, 0.4 * flight.params.area.radius);
+  EXPECT_LT(flight.max_altitude_excess, 6.0);
 }
 
 TEST(AgentVehicleTest, QuadrotorAndAirplaneSharingAirspaceNeverTouch) {

@@ -43,8 +43,9 @@ struct AttitudeAngles {
 AttitudeAngles AttitudeOf(const Quat& orientation);
 
 // The steepest bank, up to `bank_limit`, at which a wing at `airspeed` keeps
-// the stall speed of the turn (stall_speed / sqrt(cos bank)) at least 15%
-// below its airspeed; `bank_limit` itself when stall_speed is unknown (0).
+// its airspeed at least 15% above the stall speed of the turn
+// (stall_speed / sqrt(cos bank)); `bank_limit` itself when stall_speed is
+// unknown (0).
 double StallSafeBank(double stall_speed, double airspeed, double bank_limit);
 
 // What an autonomous pilot wants: a velocity in the world and, for hover

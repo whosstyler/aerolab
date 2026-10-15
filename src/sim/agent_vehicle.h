@@ -52,7 +52,8 @@ double SeaLevelStallSpeed(const AgentVehicle& vehicle);
 // what the controllers and airframe allow (bank at most kMaxAutopilotBank,
 // tilt at most kMaxAutopilotTilt; a wing never slower than 1.3 times its
 // stall speed at `altitude`, whose value it also carries). StepPhysicalAgent
-// lets the brain plan within the same limits.
+// has the brain plan within stricter ones: for wings, the bank allowed at
+// the speed floor, and that floor raised by the wind speed.
 ControlLimits AutopilotLimits(const AgentParams& params,
                               const AgentVehicle& vehicle, double altitude);
 
