@@ -148,8 +148,17 @@ void DrawBodyPlots(const Entity& entity, EditorState& state) {
   }
 }
 
-// Overlays relative energy drift of every body under `group`, to compare
-// integrators (or any set of bodies) on one chart.
+// True when any direct child of `entity` is simulated (a group of bodies).
+bool HasSimulatedChildren(const Scene& scene, const Entity& entity) {
+  return std::any_of(
+      entity.children.begin(), entity.children.end(), [&scene](EntityId child) {
+        const Entity* child_entity = scene.Get(child);
+        return child_entity != nullptr && child_entity->body.has_value();
+      });
+}
+
+// Overlays relative energy drift of every body directly under `group`, to
+// compare integrators (or any set of bodies) on one chart.
 void DrawGroupPlots(const Scene& scene, const Entity& group,
                     EditorState& state) {
   // Size the scratch before taking references so none can dangle.
@@ -217,9 +226,14 @@ void DrawTelemetryPanel(EditorFrame& frame, EditorState& state) {
   } else if (entity->body.has_value()) {
     ImGui::TextUnformatted(entity->name.c_str());
     DrawBodyPlots(*entity, state);
-  } else {
+  } else if (HasSimulatedChildren(*frame.scene, *entity)) {
     ImGui::TextUnformatted(entity->name.c_str());
     DrawGroupPlots(*frame.scene, *entity, state);
+  } else {
+    ImGui::TextUnformatted(entity->name.c_str());
+    HelpText(
+        "Not simulated, so there is nothing to plot. Select a moving "
+        "object, or a group of them, to see its flight data.");
   }
   ImGui::End();
 }
